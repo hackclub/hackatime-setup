@@ -60,7 +60,7 @@ jobs:
 
       - name: Install LLVM (Windows ARM)
         if: matrix.target == 'aarch64-pc-windows-msvc'
-        run: choco install llvm -y
+        uses: egor-tensin/setup-clang@v2
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}

@@ -11,7 +11,10 @@
 
 param(
     [Parameter(Mandatory=$true, Position=0)]
-    [string]$ApiKey
+    [string]$ApiKey,
+
+    [Parameter(Mandatory=$false, Position=1)]
+    [string]$ApiUrl
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,7 +45,11 @@ try {
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath
     Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
 
-    & (Join-Path $TempDir $BinaryName) --key $ApiKey
+    if ($ApiUrl) {
+        & (Join-Path $TempDir $BinaryName) --key $ApiKey --api-url $ApiUrl
+    } else {
+        & (Join-Path $TempDir $BinaryName) --key $ApiKey
+    }
 }
 finally {
     Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue

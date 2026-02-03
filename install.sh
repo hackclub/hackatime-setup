@@ -17,12 +17,13 @@ BINARY_NAME="hackatime_setup"
 
 # Check for API key argument
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <api-key>"
+    echo "Usage: $0 <api-key> [api-url]"
     echo "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash -s -- YOUR_API_KEY"
     exit 1
 fi
 
 API_KEY="$1"
+API_URL="${2:-}"
 
 # Detect OS
 OS="$(uname -s)"
@@ -60,4 +61,8 @@ curl -sL "$DOWNLOAD_URL" -o "$TEMP_DIR/$ASSET_NAME"
 tar -xzf "$TEMP_DIR/$ASSET_NAME" -C "$TEMP_DIR"
 chmod +x "$TEMP_DIR/$BINARY_NAME"
 
-"$TEMP_DIR/$BINARY_NAME" --key "$API_KEY"
+if [ -n "$API_URL" ]; then
+    "$TEMP_DIR/$BINARY_NAME" --key "$API_KEY" --api-url "$API_URL"
+else
+    "$TEMP_DIR/$BINARY_NAME" --key "$API_KEY"
+fi

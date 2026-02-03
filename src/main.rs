@@ -19,7 +19,7 @@ use termcolor::{ColorChoice, StandardStream};
 
 mod editor_plugins;
 
-const API_URL: &str = "https://hackatime.hackclub.com/api/hackatime/v1";
+const DEFAULT_API_URL: &str = "https://hackatime.hackclub.com/api/hackatime/v1";
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -27,6 +27,10 @@ struct Cli {
     /// The API key to use
     #[arg(short, long)]
     key: String,
+
+    /// The API URL to use
+    #[arg(long, default_value = DEFAULT_API_URL)]
+    api_url: String,
 }
 
 #[derive(Serialize)]
@@ -45,7 +49,7 @@ fn generate_random_hostname() -> String {
         .collect::<String>()
 }
 
-fn send_test_heartbeat(api_key: &str) -> Result<()> {
+fn send_test_heartbeat(api_key: &str, api_url: &str) -> Result<()> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -60,7 +64,7 @@ fn send_test_heartbeat(api_key: &str) -> Result<()> {
 
     let client = Client::new();
     let response = client
-        .post(format!("{API_URL}/users/current/heartbeats"))
+        .post(format!("{api_url}/users/current/heartbeats"))
         .bearer_auth(api_key)
         .json(&vec![heartbeat])
         .send()?;
@@ -78,12 +82,12 @@ fn send_test_heartbeat(api_key: &str) -> Result<()> {
     }
 }
 
-fn build_config(api_key: &str, advanced: bool) -> Result<Ini> {
+fn build_config(api_key: &str, api_url: &str, advanced: bool) -> Result<Ini> {
     let theme = ColorfulTheme::default();
     let mut conf = Ini::new();
 
     conf.with_section(Some("settings"))
-        .set("api_url", API_URL)
+        .set("api_url", api_url)
         .set("api_key", api_key)
         .set("heartbeat_rate_limit_seconds", "30")
         .set("exclude_unknown_project", "true");
@@ -130,7 +134,7 @@ fn main() -> Result<()> {
 
     let is_advanced = setup_choice == 1;
 
-    let conf = build_config(&cli.key, is_advanced)?;
+    let conf = build_config(&cli.key, &cli.api_url, is_advanced)?;
 
     let write_opt = WriteOption {
         kv_separator: " = ",
@@ -225,7 +229,7 @@ fn main() -> Result<()> {
         "hint: if time isn't being tracked, make sure you restart the editor first".dimmed()
     );
 
-    if let Err(e) = send_test_heartbeat(&cli.key) {
+    if let Err(e) = send_test_heartbeat(&cli.key, &cli.api_url) {
         eprintln!("{} {}", "Warning:".yellow(), e);
     }
 

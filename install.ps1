@@ -5,7 +5,7 @@
 # |_| |_|\__,_|\___|_|\_\__,_|\__|_|_| |_| |_|\___|
 #
 # This script downloads the Hackatime installer from our GitHub. It's written in Rust and is
-# open source: https://github.com/skyfallwastaken/hackatime-setup
+# open source: https://github.com/hackclub/hackatime-setup
 #
 # If you need help, ask in the #hackatime-v2 channel on Slack!
 
@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "skyfallwastaken/hackatime-setup"
+$Repo = "hackclub/hackatime-setup"
 $BinaryName = "hackatime_setup.exe"
 
 # Detect architecture

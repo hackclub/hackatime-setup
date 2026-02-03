@@ -8,11 +8,11 @@ set -euo pipefail
 # |_| |_|\__,_|\___|_|\_\__,_|\__|_|_| |_| |_|\___|
 #
 # This script downloads the Hackatime installer from our GitHub. It's written in Rust and is
-# open source: https://github.com/skyfallwastaken/hackatime-setup
+# open source: https://github.com/hackclub/hackatime-setup
 #
 # If you need help, ask in the #hackatime-v2 channel on Slack!
                                                  
-REPO="skyfallwastaken/hackatime-setup"
+REPO="hackclub/hackatime-setup"
 BINARY_NAME="hackatime_setup"
 
 # Check for API key argument

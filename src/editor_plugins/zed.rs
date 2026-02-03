@@ -1,10 +1,9 @@
+use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
-#[cfg(target_os = "linux")]
-use std::path::PathBuf;
-
 use color_eyre::{Result, eyre::eyre};
-use dialoguer::{Confirm, theme::ColorfulTheme};
+use jsonc_parser::{ParseOptions, cst::CstRootNode, json};
 
 use super::EditorPlugin;
 
@@ -22,7 +21,6 @@ impl Zed {
 
         #[cfg(target_os = "linux")]
         {
-            // Try xdg-mime first, fall back to checking common install locations
             if let Ok(o) = Command::new("xdg-mime")
                 .args(["query", "default", "x-scheme-handler/zed"])
                 .output()
@@ -31,7 +29,6 @@ impl Zed {
                     return true;
                 }
             }
-            // Fallback: check if zed binary exists
             [
                 PathBuf::from("/usr/bin/zed"),
                 PathBuf::from("/usr/bin/zeditor"),
@@ -57,6 +54,69 @@ impl Zed {
             false
         }
     }
+
+    fn config_dir() -> Option<PathBuf> {
+        #[cfg(target_os = "macos")]
+        {
+            dirs::home_dir().map(|h| h.join(".config/zed"))
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            std::env::var("FLATPAK_XDG_CONFIG_HOME")
+                .map(|p| PathBuf::from(p).join("zed"))
+                .ok()
+                .or_else(|| dirs::config_dir().map(|c| c.join("zed")))
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            dirs::config_dir().map(|c| c.join("Zed"))
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        {
+            None
+        }
+    }
+
+    fn add_extension_to_settings(settings_path: &PathBuf) -> Result<()> {
+        let content = if settings_path.exists() {
+            let s = fs::read_to_string(settings_path)
+                .map_err(|e| eyre!("Failed to read {}: {}", settings_path.display(), e))?;
+            if s.trim().is_empty() { String::from("{}") } else { s }
+        } else {
+            String::from("{}")
+        };
+
+        let root = CstRootNode::parse(&content, &ParseOptions::default())
+            .map_err(|e| eyre!("Invalid {}: {}", settings_path.display(), e))?;
+
+        let root_obj = root
+            .object_value_or_create()
+            .ok_or_else(|| eyre!("{} root must be an object", settings_path.display()))?;
+
+        let extensions = root_obj
+            .object_value_or_create("auto_install_extensions")
+            .ok_or_else(|| eyre!("auto_install_extensions must be an object"))?;
+
+        match extensions.get("wakatime") {
+            None => {
+                extensions.append("wakatime", json!(true));
+            }
+            Some(prop) => {
+                prop.set_value(json!(true));
+            }
+        }
+
+        if let Some(parent) = settings_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(settings_path, root.to_string())
+            .map_err(|e| eyre!("Failed to write {}: {}", settings_path.display(), e))?;
+
+        Ok(())
+    }
 }
 
 impl EditorPlugin for Zed {
@@ -69,16 +129,10 @@ impl EditorPlugin for Zed {
     }
 
     fn install(&self) -> Result<()> {
-        let proceed = Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("I'll open Zed to the WakaTime extension page. Click Install, then come back here. Ready?")
-            .default(true)
-            .interact()?;
+        let settings_path = Self::config_dir()
+            .ok_or_else(|| eyre!("Could not determine Zed config directory"))?
+            .join("settings.json");
 
-        if !proceed {
-            return Ok(());
-        }
-
-        open::that_detached("zed://extension/wakatime")
-            .map_err(|e| eyre!("Failed to open Zed extension page: {}", e))
+        Self::add_extension_to_settings(&settings_path)
     }
 }

@@ -2,7 +2,7 @@ use clap::Parser;
 use color_eyre::{Result, eyre::ContextCompat};
 use colored::Colorize;
 use dialoguer::{Confirm, MultiSelect, theme::ColorfulTheme};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use inkjet::{
     Highlighter, Language,
     formatter::Terminal,
@@ -43,6 +43,7 @@ fn main() -> Result<()> {
 
     let write = Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt("Should I write this to your WakaTime config?")
+        .default(true)
         .interact()
         .unwrap();
 
@@ -70,14 +71,16 @@ fn main() -> Result<()> {
         .collect();
 
     if installed_editors.is_empty() {
-        println!("{}", "No supported editors found.".yellow());
+        println!("{}", "No supported editors found.".dimmed());
         return Ok(());
     }
 
     let editor_names: Vec<String> = installed_editors.iter().map(|e| e.name()).collect();
+    let all_selected: Vec<bool> = vec![true; editor_names.len()];
     let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select editors to install WakaTime plugin for")
+        .with_prompt("What editors should I install Hackatime to?")
         .items(&editor_names)
+        .defaults(&all_selected)
         .interact()?;
 
     if selections.is_empty() {
@@ -90,36 +93,17 @@ fn main() -> Result<()> {
         .map(|i| &installed_editors[i])
         .collect();
 
-    let mp = MultiProgress::new();
-    let style = ProgressStyle::default_spinner()
-        .template("{spinner:.green} {msg}")?
-        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏");
+    for editor in selected_editors {
+        let name = editor.name();
+        let pb = ProgressBar::new_spinner();
+        pb.set_message(format!("Installing for {name}..."));
+        pb.enable_steady_tick(std::time::Duration::from_millis(80));
 
-    let progress_bars: Vec<_> = selected_editors
-        .iter()
-        .map(|e| {
-            let pb = mp.add(ProgressBar::new_spinner());
-            pb.set_style(style.clone());
-            pb.set_message(format!("Installing for {}...", e.name()));
-            pb.enable_steady_tick(std::time::Duration::from_millis(80));
-            pb
-        })
-        .collect();
-
-    selected_editors
-        .par_iter()
-        .zip(progress_bars.par_iter())
-        .for_each(|(editor, pb)| {
-            let name = editor.name();
-            match editor.install() {
-                Ok(()) => {
-                    pb.finish_with_message(format!("{} {} installed", "✔".green(), name));
-                }
-                Err(e) => {
-                    pb.finish_with_message(format!("{} {} failed: {}", "✘".red(), name, e));
-                }
-            }
-        });
+        match editor.install() {
+            Ok(()) => pb.finish_with_message(format!("{} Installed for {}", "✔".green(), name)),
+            Err(e) => pb.finish_with_message(format!("{} {} failed: {}", "✘".red(), name, e)),
+        }
+    }
 
     Ok(())
 }

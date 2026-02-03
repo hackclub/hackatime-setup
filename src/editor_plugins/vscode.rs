@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use color_eyre::{Result, eyre::eyre};
@@ -77,12 +77,13 @@ impl VsCodeFamily {
         if let Ok(output) = Command::new("which")
             .arg(format!("{}{}", self.cli_command, cmd_ext))
             .output()
-            && output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    return Some(PathBuf::from(path));
-                }
+            && output.status.success()
+        {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(PathBuf::from(path));
             }
+        }
 
         #[cfg(target_os = "windows")]
         if let Ok(output) = Command::new("where").arg(self.cli_command).output() {
@@ -110,7 +111,7 @@ impl EditorPlugin for VsCodeFamily {
 
     fn is_installed(&self) -> bool {
         self.extensions_dir()
-            .and_then(|d| d.parent().map(|p| p.exists()))
+            .and_then(|d| d.parent().map(Path::exists))
             .unwrap_or(false)
             || self.find_cli().is_some()
     }
@@ -122,6 +123,8 @@ impl EditorPlugin for VsCodeFamily {
 
         let status = Command::new(&cli)
             .args(["--install-extension", "WakaTime.vscode-wakatime"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()?;
 
         if status.success() {

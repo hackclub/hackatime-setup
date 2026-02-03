@@ -161,6 +161,8 @@ impl EditorPlugin for JetBrainsFamily {
 
         let status = Command::new(&cli)
             .args(["installPlugins", "com.wakatime.intellij.plugin"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()?;
 
         if status.success() {

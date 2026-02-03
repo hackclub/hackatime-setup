@@ -172,6 +172,10 @@ fn main() -> Result<()> {
         "Instructions for other editors: {}",
         "https://hackatime.hackclub.com/docs".underline().cyan()
     );
+    println!(
+        "{}",
+        "hint: if time isn't being tracked, make sure you restart the editor first".dimmed()
+    );
 
     Ok(())
 }

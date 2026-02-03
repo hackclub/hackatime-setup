@@ -1,10 +1,12 @@
 mod jetbrains;
 mod vscode;
+mod zed;
 
 use color_eyre::Result;
 
 pub use jetbrains::JetBrainsFamily;
 pub use vscode::VsCodeFamily;
+pub use zed::Zed;
 
 pub trait EditorPlugin: Send + Sync {
     /// Human-readable name, e.g. "VS Code", "Cursor"
@@ -62,6 +64,8 @@ pub fn all_editors() -> Vec<Box<dyn EditorPlugin>> {
             macos_app_name: "Trae",
             windows_app_folder: "Trae",
         }),
+        // Zed
+        Box::new(Zed),
         // JetBrains family
         Box::new(JetBrainsFamily {
             name: "IntelliJ IDEA Ultimate",

@@ -16,7 +16,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: linux-x86_64
-          - target: aarch64-unknown-linux-gnu
+          - target: blacksmith-4vcpu-ubuntu-2404-arm
             os: ubuntu-latest
             name: linux-aarch64
           - target: x86_64-pc-windows-msvc
@@ -75,7 +75,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4

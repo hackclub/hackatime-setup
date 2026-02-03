@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,9 +22,6 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: windows-x86_64
-          - target: i686-pc-windows-msvc
-            os: windows-latest
-            name: windows-i686
           - target: x86_64-apple-darwin
             os: macos-latest
             name: macos-x86_64

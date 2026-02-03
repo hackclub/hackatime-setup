@@ -19,22 +19,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "hackclub/hackatime-setup"
 $BinaryName = "hackatime_setup.exe"
 
-# Detect architecture
-$Arch = [System.Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
-switch ($Arch) {
-    "AMD64" { $ArchName = "x86_64" }
-    "x86"   { $ArchName = "i686" }
-    "ARM64" { 
-        Write-Host "ARM64 Windows not yet supported, trying x86_64 emulation..."
-        $ArchName = "x86_64" 
-    }
-    default { 
-        Write-Error "Unsupported architecture: $Arch"
-        exit 1
-    }
-}
-
-$AssetName = "hackatime_setup-windows-${ArchName}.zip"
+$AssetName = "hackatime_setup-windows-x86_64.zip"
 
 # Get latest release
 $ReleasesUri = "https://api.github.com/repos/$Repo/releases/latest"

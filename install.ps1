@@ -22,12 +22,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "hackclub/hackatime-setup"
 $BinaryName = "hackatime_setup.exe"
 
-$Arch = $env:PROCESSOR_ARCHITECTURE
-if ($Arch -eq "ARM64") {
-    $AssetName = "hackatime_setup-windows-aarch64.zip"
-} else {
-    $AssetName = "hackatime_setup-windows-x86_64.zip"
-}
+$AssetName = "hackatime_setup-windows-x86_64.zip"
 
 # Get latest release
 $ReleasesUri = "https://api.github.com/repos/$Repo/releases/latest"

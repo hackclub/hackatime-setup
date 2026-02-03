@@ -22,9 +22,6 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: blacksmith-4vcpu-windows-2025
             name: windows-x86_64
-          - target: aarch64-pc-windows-msvc
-            os: blacksmith-4vcpu-windows-2025
-            name: windows-aarch64
           - target: x86_64-apple-darwin
             os: macos-latest
             name: macos-x86_64
@@ -57,10 +54,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Install LLVM (Windows ARM)
-        if: matrix.target == 'aarch64-pc-windows-msvc'
-        uses: egor-tensin/setup-clang@v2
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}

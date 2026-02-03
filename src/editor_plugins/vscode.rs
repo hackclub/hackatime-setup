@@ -9,6 +9,7 @@ pub struct VsCodeFamily {
     pub name: &'static str,
     pub config_subdir: &'static str,
     pub cli_command: &'static str,
+    #[allow(dead_code)] // The dead_code lint triggers on non-Mac platforms
     pub macos_app_name: &'static str,
     #[allow(dead_code)] // The dead_code lint triggers on non-Windows platforms
     pub windows_app_folder: &'static str,

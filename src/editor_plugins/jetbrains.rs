@@ -9,6 +9,7 @@ pub struct JetBrainsFamily {
     pub name: &'static str,
     pub product_code: &'static str,
     pub cli_command: &'static str,
+    #[allow(dead_code)] // The dead_code lint triggers on non-Mac platforms
     pub macos_app_name: &'static str,
 }
 

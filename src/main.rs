@@ -46,10 +46,6 @@ fn generate_random_hostname() -> String {
 }
 
 fn send_test_heartbeat(api_key: &str) -> Result<()> {
-    let pb = ProgressBar::new_spinner();
-    pb.set_message("Sending test heartbeat...");
-    pb.enable_steady_tick(std::time::Duration::from_millis(80));
-
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -71,12 +67,14 @@ fn send_test_heartbeat(api_key: &str) -> Result<()> {
 
     let status = response.status();
     if status.is_success() {
-        pb.finish_with_message(format!("{} Test heartbeat sent successfully", "✔".green()));
         Ok(())
     } else {
         let body = response.text().unwrap_or_default();
-        pb.finish_with_message(format!("{} Failed to send heartbeat: {}", "✘".red(), body));
-        Err(color_eyre::eyre::eyre!("Heartbeat failed with status {}", status))
+        Err(color_eyre::eyre::eyre!(
+            "Test heartbeat failed ({}): {}",
+            status,
+            body
+        ))
     }
 }
 
@@ -173,11 +171,6 @@ fn main() -> Result<()> {
         format!("Config written to {}", config_path.display()).green()
     );
 
-    if let Err(e) = send_test_heartbeat(&cli.key) {
-        eprintln!("{} {}", "Warning:".yellow(), e);
-    }
-    println!();
-
     let all_editors = editor_plugins::all_editors();
     let installed_editors: Vec<_> = all_editors
         .into_par_iter()
@@ -232,6 +225,10 @@ fn main() -> Result<()> {
         "hint: if time isn't being tracked, make sure you restart the editor first".dimmed()
     );
 
+    if let Err(e) = send_test_heartbeat(&cli.key) {
+        eprintln!("{} {}", "Warning:".yellow(), e);
+    }
+
     Ok(())
 }
 
@@ -253,7 +250,12 @@ fn print_ini(ini: &str) -> Result<()> {
             print!("│ ");
             let stream = StandardStream::stdout(ColorChoice::Always);
             let formatter = Terminal::new(theme.clone(), stream);
-            highlighter.highlight_to_writer(Language::Ini, &formatter, line, &mut std::io::sink())?;
+            highlighter.highlight_to_writer(
+                Language::Ini,
+                &formatter,
+                line,
+                &mut std::io::sink(),
+            )?;
             let padding = content_width - line_len;
             println!("{} │", " ".repeat(padding));
         } else {
@@ -266,7 +268,12 @@ fn print_ini(ini: &str) -> Result<()> {
                 print!("│ ");
                 let stream = StandardStream::stdout(ColorChoice::Always);
                 let formatter = Terminal::new(theme.clone(), stream);
-                highlighter.highlight_to_writer(Language::Ini, &formatter, &chunk, &mut std::io::sink())?;
+                highlighter.highlight_to_writer(
+                    Language::Ini,
+                    &formatter,
+                    &chunk,
+                    &mut std::io::sink(),
+                )?;
                 let padding = content_width - chunk_len;
                 println!("{} │", " ".repeat(padding));
             }

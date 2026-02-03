@@ -84,7 +84,11 @@ impl Zed {
         let content = if settings_path.exists() {
             let s = fs::read_to_string(settings_path)
                 .map_err(|e| eyre!("Failed to read {}: {}", settings_path.display(), e))?;
-            if s.trim().is_empty() { String::from("{}") } else { s }
+            if s.trim().is_empty() {
+                String::from("{}")
+            } else {
+                s
+            }
         } else {
             String::from("{}")
         };

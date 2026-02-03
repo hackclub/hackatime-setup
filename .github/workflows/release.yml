@@ -58,6 +58,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
+      - name: Install LLVM (Windows ARM)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        run: choco install llvm -y
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
         if: matrix.target != 'aarch64-unknown-linux-gnu'

@@ -255,9 +255,7 @@ fn print_ini(ini: &str) -> Result<()> {
     let mut highlighter = Highlighter::new();
     let theme = Theme::from_helix(vendored::AYU_DARK)?;
 
-    let term_width = terminal_size::terminal_size()
-        .map(|(w, _)| w.0 as usize)
-        .unwrap_or(80);
+    let term_width = terminal_size::terminal_size().map_or(80, |(w, _)| w.0 as usize);
     let content_width = term_width.saturating_sub(4).max(20);
     let border_width = content_width + 2;
 

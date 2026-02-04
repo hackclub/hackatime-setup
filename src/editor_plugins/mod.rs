@@ -1,4 +1,5 @@
 mod jetbrains;
+mod utils;
 mod vscode;
 mod zed;
 
@@ -68,88 +69,76 @@ pub fn all_editors() -> Vec<Box<dyn EditorPlugin>> {
         Box::new(Zed),
         // JetBrains family
         Box::new(JetBrainsFamily {
-            name: "IntelliJ IDEA Ultimate",
-            product_code: "IntelliJIdea",
+            name: "IntelliJ IDEA",
+            product_codes: &["IntelliJIdea", "IdeaIC"],
             cli_command: "idea",
-            macos_app_name: "IntelliJ IDEA",
+            macos_app_names: &["IntelliJ IDEA", "IntelliJ IDEA CE"],
         }),
         Box::new(JetBrainsFamily {
-            name: "IntelliJ IDEA Community",
-            product_code: "IdeaIC",
-            cli_command: "idea",
-            macos_app_name: "IntelliJ IDEA CE",
-        }),
-        Box::new(JetBrainsFamily {
-            name: "PyCharm Professional",
-            product_code: "PyCharm",
+            name: "PyCharm",
+            product_codes: &["PyCharm", "PyCharmCE"],
             cli_command: "pycharm",
-            macos_app_name: "PyCharm",
-        }),
-        Box::new(JetBrainsFamily {
-            name: "PyCharm Community",
-            product_code: "PyCharmCE",
-            cli_command: "pycharm",
-            macos_app_name: "PyCharm CE",
+            macos_app_names: &["PyCharm", "PyCharm CE"],
         }),
         Box::new(JetBrainsFamily {
             name: "WebStorm",
-            product_code: "WebStorm",
+            product_codes: &["WebStorm"],
             cli_command: "webstorm",
-            macos_app_name: "WebStorm",
+            macos_app_names: &["WebStorm"],
         }),
         Box::new(JetBrainsFamily {
             name: "GoLand",
-            product_code: "GoLand",
+            product_codes: &["GoLand"],
             cli_command: "goland",
-            macos_app_name: "GoLand",
+            macos_app_names: &["GoLand"],
         }),
         Box::new(JetBrainsFamily {
             name: "RustRover",
-            product_code: "RustRover",
+            product_codes: &["RustRover"],
             cli_command: "rustrover",
-            macos_app_name: "RustRover",
+            macos_app_names: &["RustRover"],
         }),
         Box::new(JetBrainsFamily {
             name: "RubyMine",
-            product_code: "RubyMine",
+            product_codes: &["RubyMine"],
             cli_command: "rubymine",
-            macos_app_name: "RubyMine",
+            macos_app_names: &["RubyMine"],
         }),
         Box::new(JetBrainsFamily {
             name: "PhpStorm",
-            product_code: "PhpStorm",
+            product_codes: &["PhpStorm"],
             cli_command: "phpstorm",
-            macos_app_name: "PhpStorm",
+            macos_app_names: &["PhpStorm"],
         }),
         Box::new(JetBrainsFamily {
             name: "CLion",
-            product_code: "CLion",
+            product_codes: &["CLion"],
             cli_command: "clion",
-            macos_app_name: "CLion",
+            macos_app_names: &["CLion"],
         }),
         Box::new(JetBrainsFamily {
             name: "DataGrip",
-            product_code: "DataGrip",
+            product_codes: &["DataGrip"],
             cli_command: "datagrip",
-            macos_app_name: "DataGrip",
+            macos_app_names: &["DataGrip"],
         }),
         Box::new(JetBrainsFamily {
             name: "Rider",
-            product_code: "Rider",
+            product_codes: &["Rider"],
             cli_command: "rider",
-            macos_app_name: "Rider",
+            macos_app_names: &["Rider"],
         }),
         Box::new(JetBrainsFamily {
             name: "Android Studio",
-            product_code: "AndroidStudio",
+            product_codes: &["AndroidStudio"],
             cli_command: "studio",
-            macos_app_name: "Android Studio",
+            macos_app_names: &["Android Studio"],
         }),
         Box::new(JetBrainsFamily {
             name: "AppCode",
-            product_code: "AppCode",
+            product_codes: &["AppCode"],
             cli_command: "appcode",
-            macos_app_name: "AppCode",
+            macos_app_names: &["AppCode"],
         }),
     ]
 }

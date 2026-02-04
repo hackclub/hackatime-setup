@@ -2,15 +2,17 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use color_eyre::{Result, eyre::eyre};
+use colored::Colorize;
 
 use super::EditorPlugin;
+use super::utils::is_process_running;
 
 pub struct JetBrainsFamily {
     pub name: &'static str,
-    pub product_code: &'static str,
+    pub product_codes: &'static [&'static str],
     pub cli_command: &'static str,
     #[allow(dead_code)] // The dead_code lint triggers on non-Mac platforms
-    pub macos_app_name: &'static str,
+    pub macos_app_names: &'static [&'static str],
 }
 
 impl JetBrainsFamily {
@@ -24,7 +26,11 @@ impl JetBrainsFamily {
                 for entry in entries.flatten() {
                     let name = entry.file_name();
                     let name_str = name.to_string_lossy();
-                    if name_str.starts_with(self.product_code) {
+                    if self
+                        .product_codes
+                        .iter()
+                        .any(|code| name_str.starts_with(code))
+                    {
                         dirs.push(entry.path());
                     }
                 }
@@ -38,7 +44,11 @@ impl JetBrainsFamily {
                 for entry in entries.flatten() {
                     let name = entry.file_name();
                     let name_str = name.to_string_lossy();
-                    if name_str.starts_with(self.product_code) {
+                    if self
+                        .product_codes
+                        .iter()
+                        .any(|code| name_str.starts_with(code))
+                    {
                         dirs.push(entry.path());
                     }
                 }
@@ -52,7 +62,11 @@ impl JetBrainsFamily {
                 for entry in entries.flatten() {
                     let name = entry.file_name();
                     let name_str = name.to_string_lossy();
-                    if name_str.starts_with(self.product_code) {
+                    if self
+                        .product_codes
+                        .iter()
+                        .any(|code| name_str.starts_with(code))
+                    {
                         dirs.push(entry.path());
                     }
                 }
@@ -67,15 +81,17 @@ impl JetBrainsFamily {
 
         #[cfg(target_os = "macos")]
         {
-            paths.push(PathBuf::from(format!(
-                "/Applications/{}.app/Contents/MacOS/{}",
-                self.macos_app_name, self.cli_command
-            )));
-            if let Some(home) = dirs::home_dir() {
-                paths.push(home.join(format!(
-                    "Applications/{}.app/Contents/MacOS/{}",
-                    self.macos_app_name, self.cli_command
+            for app_name in self.macos_app_names {
+                paths.push(PathBuf::from(format!(
+                    "/Applications/{}.app/Contents/MacOS/{}",
+                    app_name, self.cli_command
                 )));
+                if let Some(home) = dirs::home_dir() {
+                    paths.push(home.join(format!(
+                        "Applications/{}.app/Contents/MacOS/{}",
+                        app_name, self.cli_command
+                    )));
+                }
             }
         }
 
@@ -107,10 +123,12 @@ impl JetBrainsFamily {
                 )));
             }
             if let Ok(programfiles) = std::env::var("ProgramFiles") {
-                paths.push(PathBuf::from(format!(
-                    "{}/JetBrains/{}/bin/{}.bat",
-                    programfiles, self.macos_app_name, self.cli_command
-                )));
+                for app_name in self.macos_app_names {
+                    paths.push(PathBuf::from(format!(
+                        "{}/JetBrains/{}/bin/{}.bat",
+                        programfiles, app_name, self.cli_command
+                    )));
+                }
             }
         }
 
@@ -118,10 +136,20 @@ impl JetBrainsFamily {
     }
 
     fn find_cli(&self) -> Option<PathBuf> {
-        // On Windows, the CLI is typically available as a shell command directly
         #[cfg(target_os = "windows")]
         {
-            return Some(PathBuf::from(self.cli_command));
+            // On Windows, try running the CLI to check if it exists
+            if Command::new(self.cli_command)
+                .arg("--version")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok()
+            {
+                return Some(PathBuf::from(self.cli_command));
+            }
+            // Fall back to known paths
+            return self.get_cli_paths().into_iter().find(|path| path.exists());
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -138,6 +166,10 @@ impl JetBrainsFamily {
             self.get_cli_paths().into_iter().find(|path| path.exists())
         }
     }
+
+    fn is_running(&self) -> bool {
+        is_process_running(self.cli_command)
+    }
 }
 
 impl EditorPlugin for JetBrainsFamily {
@@ -150,6 +182,16 @@ impl EditorPlugin for JetBrainsFamily {
     }
 
     fn install(&self) -> Result<()> {
+        if self.is_running() {
+            eprintln!(
+                "{}",
+                format!(
+                    "Warning: {} appears to be running. Please close it for the plugin to install correctly.",
+                    self.name
+                ).yellow()
+            );
+        }
+
         let cli = self
             .find_cli()
             .ok_or_else(|| eyre!("{} CLI not found", self.name))?;

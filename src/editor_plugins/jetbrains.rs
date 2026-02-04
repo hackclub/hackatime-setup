@@ -118,6 +118,7 @@ impl JetBrainsFamily {
     }
 
     fn find_cli(&self) -> Option<PathBuf> {
+        #[cfg(not(target_os = "windows"))]
         if let Ok(output) = Command::new("which").arg(self.cli_command).output()
             && output.status.success()
         {

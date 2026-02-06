@@ -240,8 +240,13 @@ fn main() -> Result<()> {
         "https://hackatime.hackclub.com/docs".underline().cyan()
     );
     println!(
-        "{}",
-        "hint: if time isn't being tracked, make sure you restart the editor first".dimmed()
+        "{} {}",
+        "hint: if time isn't being tracked, make sure you restart the editor first. need help?"
+            .dimmed(),
+        "http://forms.hackclub.com/setup"
+            .dimmed()
+            .cyan()
+            .underline()
     );
 
     if let Err(e) = send_test_heartbeat(&cli.key, &cli.api_url) {

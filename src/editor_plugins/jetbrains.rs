@@ -3,6 +3,7 @@ use std::process::Command;
 
 use color_eyre::{Result, eyre::eyre};
 use colored::Colorize;
+use which::which;
 
 use super::EditorPlugin;
 use super::utils::is_process_running;
@@ -11,7 +12,7 @@ pub struct JetBrainsFamily {
     pub name: &'static str,
     pub product_codes: &'static [&'static str],
     pub cli_command: &'static str,
-    #[allow(dead_code)] // The dead_code lint triggers on non-Mac platforms
+    #[allow(dead_code)]
     pub macos_app_names: &'static [&'static str],
 }
 
@@ -19,90 +20,55 @@ impl JetBrainsFamily {
     fn config_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = Vec::new();
 
-        #[cfg(target_os = "macos")]
-        if let Some(home) = dirs::home_dir() {
-            let base = home.join("Library/Application Support/JetBrains");
-            if let Ok(entries) = std::fs::read_dir(&base) {
+        let base_path = {
+            #[cfg(target_os = "macos")]
+            {
+                dirs::home_dir().map(|h| h.join("Library/Application Support/JetBrains"))
+            }
+            #[cfg(target_os = "linux")]
+            {
+                dirs::home_dir().map(|h| h.join(".config/JetBrains"))
+            }
+            #[cfg(target_os = "windows")]
+            {
+                std::env::var("APPDATA")
+                    .ok()
+                    .map(|p| PathBuf::from(p).join("JetBrains"))
+            }
+        };
+
+        if let Some(base) = base_path
+            && let Ok(entries) = std::fs::read_dir(base) {
                 for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if self
-                        .product_codes
-                        .iter()
-                        .any(|code| name_str.starts_with(code))
-                    {
-                        dirs.push(entry.path());
+                    let path = entry.path();
+                    let name = path.file_name().unwrap_or_default().to_string_lossy();
+                    if self.product_codes.iter().any(|code| name.starts_with(code)) {
+                        dirs.push(path);
                     }
                 }
             }
-        }
-
-        #[cfg(target_os = "linux")]
-        if let Some(home) = dirs::home_dir() {
-            let base = home.join(".config/JetBrains");
-            if let Ok(entries) = std::fs::read_dir(&base) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if self
-                        .product_codes
-                        .iter()
-                        .any(|code| name_str.starts_with(code))
-                    {
-                        dirs.push(entry.path());
-                    }
-                }
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let base = PathBuf::from(appdata).join("JetBrains");
-            if let Ok(entries) = std::fs::read_dir(&base) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if self
-                        .product_codes
-                        .iter()
-                        .any(|code| name_str.starts_with(code))
-                    {
-                        dirs.push(entry.path());
-                    }
-                }
-            }
-        }
-
         dirs
     }
 
-    fn get_cli_paths(&self) -> Vec<PathBuf> {
+    fn get_fallback_paths(&self) -> Vec<PathBuf> {
         let mut paths = Vec::new();
 
         #[cfg(target_os = "macos")]
         {
             for app_name in self.macos_app_names {
-                paths.push(PathBuf::from(format!(
-                    "/Applications/{}.app/Contents/MacOS/{}",
+                let suffix = format!(
+                    "Applications/{}.app/Contents/MacOS/{}",
                     app_name, self.cli_command
-                )));
+                );
+                paths.push(PathBuf::from(format!("/{}", suffix)));
                 if let Some(home) = dirs::home_dir() {
-                    paths.push(home.join(format!(
-                        "Applications/{}.app/Contents/MacOS/{}",
-                        app_name, self.cli_command
-                    )));
+                    paths.push(home.join(suffix));
                 }
             }
         }
 
         #[cfg(target_os = "linux")]
         {
-            if let Some(home) = dirs::home_dir() {
-                paths.push(home.join(format!(
-                    ".local/share/JetBrains/Toolbox/apps/{}/bin/{}",
-                    self.cli_command, self.cli_command
-                )));
-            }
             paths.push(PathBuf::from(format!(
                 "/opt/{}/bin/{}",
                 self.cli_command, self.cli_command
@@ -112,6 +78,13 @@ impl JetBrainsFamily {
                 self.cli_command
             )));
             paths.push(PathBuf::from(format!("/snap/bin/{}", self.cli_command)));
+
+            if let Some(home) = dirs::home_dir() {
+                paths.push(home.join(format!(
+                    ".local/share/JetBrains/Toolbox/apps/{}/bin/{}",
+                    self.cli_command, self.cli_command
+                )));
+            }
         }
 
         #[cfg(target_os = "windows")]
@@ -136,35 +109,12 @@ impl JetBrainsFamily {
     }
 
     fn find_cli(&self) -> Option<PathBuf> {
-        #[cfg(target_os = "windows")]
-        {
-            // On Windows, try running the CLI to check if it exists
-            if Command::new(self.cli_command)
-                .arg("--version")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok()
-            {
-                return Some(PathBuf::from(self.cli_command));
-            }
-            // Fall back to known paths
-            return self.get_cli_paths().into_iter().find(|path| path.exists());
+        if let Ok(path) = which(self.cli_command) {
+            return Some(path);
         }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            if let Ok(output) = Command::new("which").arg(self.cli_command).output()
-                && output.status.success()
-            {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    return Some(PathBuf::from(path));
-                }
-            }
-
-            self.get_cli_paths().into_iter().find(|path| path.exists())
-        }
+        self.get_fallback_paths()
+            .into_iter()
+            .find(|path| path.exists())
     }
 
     fn is_running(&self) -> bool {
@@ -192,11 +142,25 @@ impl EditorPlugin for JetBrainsFamily {
             );
         }
 
-        let cli = self
+        let cli_path = self
             .find_cli()
             .ok_or_else(|| eyre!("{} CLI not found", self.name))?;
 
-        let status = Command::new(&cli)
+        let mut cmd;
+
+        #[cfg(target_os = "windows")]
+        {
+            cmd = Command::new("cmd");
+            cmd.arg("/C");
+            cmd.arg(&cli_path);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            cmd = Command::new(&cli_path);
+        }
+
+        let status = cmd
             .args(["installPlugins", "com.wakatime.intellij.plugin"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

@@ -15,11 +15,7 @@ pub fn is_process_running(process_name: &str) -> bool {
 
     #[cfg(not(target_os = "windows"))]
     {
-        if let Ok(output) = Command::new("pgrep")
-            .arg("-i")
-            .arg(process_name)
-            .output()
-        {
+        if let Ok(output) = Command::new("pgrep").arg("-i").arg(process_name).output() {
             return output.status.success();
         }
         false

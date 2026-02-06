@@ -25,6 +25,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = "1.16"
+which = "8.0.0"
 
 [profile.release]
 lto = true

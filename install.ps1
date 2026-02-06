@@ -20,7 +20,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Repo = "hackclub/hackatime-setup"
-$BinaryName = "hackatime_setup.exe"
+$BinaryName = "hackatime_cli.exe"
 
 $AssetName = "hackatime_setup-windows-x86_64.zip"
 

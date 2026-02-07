@@ -32,7 +32,7 @@ impl VsCodeFamily {
                 self.macos_app_name, self.cli_command
             );
 
-            paths.push(PathBuf::from(format!("/{}", app_path)));
+            paths.push(PathBuf::from(format!("/{app_path}")));
             if let Some(home) = dirs::home_dir() {
                 paths.push(home.join(app_path));
             }

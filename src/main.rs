@@ -18,6 +18,8 @@ use serde::Serialize;
 use termcolor::{ColorChoice, StandardStream};
 use uuid::Uuid;
 
+use crate::editor_plugins::EditorPlugin;
+
 mod editor_plugins;
 
 const DEFAULT_API_URL: &str = "https://hackatime.hackclub.com/api/hackatime/v1";
@@ -208,33 +210,21 @@ fn main() -> Result<()> {
         .items(&editor_names)
         .defaults(&all_selected)
         .interact()?;
+    let has_editors_to_install = !selections.is_empty();
 
-    if selections.is_empty() {
-        println!("{}", "No editors selected.".dimmed());
-        return Ok(());
+    if has_editors_to_install {
+        let selected_editors: Vec<_> = selections
+            .into_iter()
+            .map(|i| &installed_editors[i])
+            .collect();
+        install_plugins(selected_editors);
+    } else {
+        println!(
+            "\n{}",
+            "No editors selected, skipping editor plugin installation.".dimmed()
+        );
     }
 
-    let selected_editors: Vec<_> = selections
-        .into_iter()
-        .map(|i| &installed_editors[i])
-        .collect();
-
-    for editor in selected_editors {
-        let name = editor.name();
-        let pb = ProgressBar::new_spinner();
-        pb.set_message(format!("Installing for {name}..."));
-        pb.enable_steady_tick(std::time::Duration::from_millis(80));
-
-        match editor.install() {
-            Ok(()) => pb.finish_with_message(format!("{} Installed for {}", "✔".green(), name)),
-            Err(e) => pb.finish_with_message(format!("{} {} failed: {}", "✘".red(), name, e)),
-        }
-    }
-
-    println!(
-        "{}",
-        "Done! You can now code in your editor to track your time.".bold()
-    );
     println!(
         "Instructions for other editors: {}",
         "https://hackatime.hackclub.com/docs".underline().cyan()
@@ -254,6 +244,25 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn install_plugins(selected_editors: Vec<&Box<dyn EditorPlugin>>) {
+    for editor in selected_editors {
+        let name = editor.name();
+        let pb = ProgressBar::new_spinner();
+        pb.set_message(format!("Installing for {name}..."));
+        pb.enable_steady_tick(std::time::Duration::from_millis(80));
+
+        match editor.install() {
+            Ok(()) => pb.finish_with_message(format!("{} Installed for {}", "✔".green(), name)),
+            Err(e) => pb.finish_with_message(format!("{} {} failed: {}", "✘".red(), name, e)),
+        }
+    }
+
+    println!(
+        "\n\n{}",
+        "Done! You can now code in your editor to track your time.".bold()
+    );
 }
 
 fn print_ini(ini: &str) -> Result<()> {

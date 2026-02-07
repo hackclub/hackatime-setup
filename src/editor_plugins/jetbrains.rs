@@ -38,15 +38,16 @@ impl JetBrainsFamily {
         };
 
         if let Some(base) = base_path
-            && let Ok(entries) = std::fs::read_dir(base) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    let name = path.file_name().unwrap_or_default().to_string_lossy();
-                    if self.product_codes.iter().any(|code| name.starts_with(code)) {
-                        dirs.push(path);
-                    }
+            && let Ok(entries) = std::fs::read_dir(base)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                if self.product_codes.iter().any(|code| name.starts_with(code)) {
+                    dirs.push(path);
                 }
             }
+        }
         dirs
     }
 
@@ -60,7 +61,7 @@ impl JetBrainsFamily {
                     "Applications/{}.app/Contents/MacOS/{}",
                     app_name, self.cli_command
                 );
-                paths.push(PathBuf::from(format!("/{}", suffix)));
+                paths.push(PathBuf::from(format!("/{suffix}")));
                 if let Some(home) = dirs::home_dir() {
                     paths.push(home.join(suffix));
                 }

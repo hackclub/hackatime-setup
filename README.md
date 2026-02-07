@@ -10,4 +10,4 @@ Head to https://hackatime.hackclub.com/my/wakatime_setup to set it up!
 - VSCode, Cursor, Trae, Windsurf, Antigravity
 - IntelliJ IDEs
 - Zed
-
+- Xcode

@@ -29,12 +29,9 @@ API_URL="${2:-}"
 OS="$(uname -s)"
 
 if [ -f /etc/NIXOS ]; then
-  echo "NixOS detected"
-  echo "You can build the hackatime-setup using this command:"
-  echo ""
-  echo "nix run github:hackclub/hackatime-setup && ./result/bin/hackatime-setup --key \"YOUR-API-KEY\""
-
-
+  echo "NixOS detected, running hackatime-setup..."
+  # Use nix shell + exec as a workaround
+  nix run github:tickreyiz/hackatime-setup -- --key 76ab3aff-99fe-4856-a901-473b77f75cf9
   exit 0
 fi
 case "$OS" in

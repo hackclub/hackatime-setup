@@ -200,29 +200,27 @@ fn main() -> Result<()> {
 
     if installed_editors.is_empty() {
         println!("{}", "No supported editors found.".dimmed());
-        return Ok(());
-    }
-
-    let editor_names: Vec<String> = installed_editors.iter().map(|e| e.name()).collect();
-    let all_selected: Vec<bool> = vec![true; editor_names.len()];
-    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("What editors should I install Hackatime to? (space to select/unselect)")
-        .items(&editor_names)
-        .defaults(&all_selected)
-        .interact()?;
-    let has_editors_to_install = !selections.is_empty();
-
-    if has_editors_to_install {
-        let selected_editors: Vec<_> = selections
-            .into_iter()
-            .map(|i| &installed_editors[i])
-            .collect();
-        install_plugins(selected_editors);
     } else {
-        println!(
-            "\n{}",
-            "No editors selected, skipping editor plugin installation.".dimmed()
-        );
+        let editor_names: Vec<String> = installed_editors.iter().map(|e| e.name()).collect();
+        let all_selected: Vec<bool> = vec![true; editor_names.len()];
+        let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+            .with_prompt("What editors should I install Hackatime to? (space to select/unselect)")
+            .items(&editor_names)
+            .defaults(&all_selected)
+            .interact()?;
+
+        if !selections.is_empty() {
+            let selected_editors: Vec<_> = selections
+                .into_iter()
+                .map(|i| &installed_editors[i])
+                .collect();
+            install_plugins(selected_editors);
+        } else {
+            println!(
+                "\n{}",
+                "No editors selected, skipping editor plugin installation.".dimmed()
+            );
+        }
     }
 
     println!(

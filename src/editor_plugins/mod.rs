@@ -1,4 +1,5 @@
 mod jetbrains;
+mod terminal;
 mod utils;
 mod vscode;
 mod xcode;
@@ -7,6 +8,7 @@ mod zed;
 use color_eyre::Result;
 
 pub use jetbrains::JetBrainsFamily;
+pub use terminal::TerminalWakaTime;
 pub use vscode::VsCodeFamily;
 pub use xcode::Xcode;
 pub use zed::Zed;
@@ -71,6 +73,8 @@ pub fn all_editors() -> Vec<Box<dyn EditorPlugin>> {
         Box::new(Xcode),
         // Zed
         Box::new(Zed),
+        // Terminal (bash, zsh, fish)
+        Box::new(TerminalWakaTime),
         // JetBrains family
         Box::new(JetBrainsFamily {
             name: "IntelliJ IDEA",

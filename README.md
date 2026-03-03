@@ -11,3 +11,4 @@ Head to https://hackatime.hackclub.com/my/wakatime_setup to set it up!
 - IntelliJ IDEs
 - Zed
 - Xcode
+- Terminal (bash, zsh, fish)

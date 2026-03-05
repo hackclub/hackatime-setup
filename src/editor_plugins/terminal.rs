@@ -110,4 +110,6 @@ impl EditorPlugin for TerminalWakaTime {
             ))
         }
     }
+        }
+    }
 }

@@ -10,8 +10,9 @@ pub struct TerminalWakaTime;
 
 impl TerminalWakaTime {
     const INSTALL_URLS: [&'static str; 2] = [
-        "http://hack.club/tw.sh",
-        "http://hack.club/terminal-wakatime.sh",
+        "https://hack.club/tw.sh",
+        "https://hack.club/terminal-wakatime.sh",
+    ];
     ];
 
     fn has_supported_shell() -> bool {

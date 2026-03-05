@@ -73,8 +73,9 @@ impl EditorPlugin for TerminalWakaTime {
         #[cfg(target_os = "windows")]
         {
             return Err(eyre!(
-                "terminal-wakatime setup is currently supported on bash, zsh, and fish"
+                "terminal-wakatime setup is not currently supported on Windows (requires bash, zsh, or fish)"
             ));
+        }
         }
 
         #[cfg(not(target_os = "windows"))]

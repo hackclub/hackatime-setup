@@ -1,19 +1,65 @@
-use std::path::PathBuf;
-use std::process::Command;
+use std::env::consts::{ARCH, OS};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use color_eyre::{Result, eyre::eyre};
 use which::which;
 
 use super::EditorPlugin;
 
+const REPO: &str = "hackclub/terminal-wakatime";
+const BINARY_NAME: &str = "terminal-wakatime";
+
+#[derive(serde::Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+}
+
 pub struct TerminalWakaTime;
 
 impl TerminalWakaTime {
-    const INSTALL_URLS: [&'static str; 2] = [
-        "https://hack.club/tw.sh",
-        "https://hack.club/terminal-wakatime.sh",
-    ];
-    ];
+    fn release_target() -> Result<(&'static str, &'static str)> {
+        let os = match OS {
+            "macos" => "darwin",
+            "linux" => "linux",
+            other => return Err(eyre!("Unsupported OS for terminal-wakatime: {other}")),
+        };
+        let arch = match ARCH {
+            "x86_64" => "amd64",
+            "aarch64" => "arm64",
+            other => return Err(eyre!("Unsupported architecture for terminal-wakatime: {other}")),
+        };
+        Ok((os, arch))
+    }
+
+    fn preferred_install_path() -> PathBuf {
+        PathBuf::from("/usr/local/bin").join(BINARY_NAME)
+    }
+
+    fn fallback_install_dir() -> Result<PathBuf> {
+        dirs::home_dir()
+            .map(|h| h.join(".wakatime"))
+            .ok_or_else(|| eyre!("Could not determine home directory"))
+    }
+
+    fn fallback_install_path() -> Result<PathBuf> {
+        Ok(Self::fallback_install_dir()?.join(BINARY_NAME))
+    }
+
+    fn existing_binary_path() -> Option<PathBuf> {
+        let preferred = Self::preferred_install_path();
+        if preferred.exists() {
+            return Some(preferred);
+        }
+
+        if let Ok(fallback) = Self::fallback_install_path() {
+            if fallback.exists() {
+                return Some(fallback);
+            }
+        }
+
+        which(BINARY_NAME).ok()
+    }
 
     fn has_supported_shell() -> bool {
         ["bash", "zsh", "fish"]
@@ -21,34 +67,169 @@ impl TerminalWakaTime {
             .any(|shell| which(shell).is_ok())
     }
 
-    fn has_bash() -> bool {
-        which("bash").is_ok()
-    }
+    fn fetch_latest_tag(client: &reqwest::blocking::Client) -> Result<String> {
+        let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
+        let response = client
+            .get(&url)
+            .header(reqwest::header::USER_AGENT, "hackatime-setup")
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+            .send()
+            .map_err(|e| eyre!("Failed to fetch latest terminal-wakatime release: {e}"))?;
 
-    fn install_path() -> Option<PathBuf> {
-        dirs::home_dir().map(|h| h.join(".wakatime/terminal-wakatime"))
-    }
-
-    fn run_installer_script(url: &str) -> Result<(bool, String)> {
-        let output = Command::new("bash")
-            .arg("-lc")
-            .arg(format!("set -o pipefail; curl -fsSL {url} | bash"))
-            .output()
-            .map_err(|e| eyre!("Failed to run terminal-wakatime installer: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let combined = format!("{stdout}\n{stderr}");
-
-        if output.status.success()
-            || combined
-                .to_lowercase()
-                .contains("already installed")
-        {
-            Ok((true, combined))
-        } else {
-            Ok((false, combined))
+        if !response.status().is_success() {
+            return Err(eyre!(
+                "Failed to fetch latest terminal-wakatime release (HTTP {})",
+                response.status()
+            ));
         }
+
+        let release: GitHubRelease = response
+            .json()
+            .map_err(|e| eyre!("Failed to parse GitHub release response: {e}"))?;
+
+        Ok(release.tag_name)
+    }
+
+    fn download_binary(client: &reqwest::blocking::Client, tag: &str) -> Result<Vec<u8>> {
+        let (os, arch) = Self::release_target()?;
+        let url = format!(
+            "https://github.com/{REPO}/releases/download/{tag}/{BINARY_NAME}-{os}-{arch}"
+        );
+
+        let response = client
+            .get(&url)
+            .header(reqwest::header::USER_AGENT, "hackatime-setup")
+            .send()
+            .map_err(|e| eyre!("Failed to download terminal-wakatime: {e}"))?;
+
+        if !response.status().is_success() {
+            return Err(eyre!(
+                "Failed to download terminal-wakatime (HTTP {})",
+                response.status()
+            ));
+        }
+
+        response
+            .bytes()
+            .map(|b| b.to_vec())
+            .map_err(|e| eyre!("Failed to read terminal-wakatime download: {e}"))
+    }
+
+    fn install_binary(bytes: &[u8]) -> Result<PathBuf> {
+        let preferred = Self::preferred_install_path();
+
+        // Try preferred location first, fall back to ~/.wakatime
+        let dest = if Self::try_write_binary(&preferred, bytes).is_ok() {
+            preferred
+        } else {
+            let fallback_dir = Self::fallback_install_dir()?;
+            fs::create_dir_all(&fallback_dir)
+                .map_err(|e| eyre!("Failed to create {}: {e}", fallback_dir.display()))?;
+            let fallback = fallback_dir.join(BINARY_NAME);
+            Self::try_write_binary(&fallback, bytes)
+                .map_err(|e| eyre!("Failed to install terminal-wakatime: {e}"))?;
+            fallback
+        };
+
+        Self::make_executable(&dest)?;
+        Ok(dest)
+    }
+
+    fn try_write_binary(path: &Path, bytes: &[u8]) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| eyre!("Failed to create {}: {e}", parent.display()))?;
+        }
+        fs::write(path, bytes)
+            .map_err(|e| eyre!("Failed to write {}: {e}", path.display()))
+    }
+
+    #[cfg(unix)]
+    fn make_executable(path: &Path) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let perms = std::fs::Permissions::from_mode(0o755);
+        fs::set_permissions(path, perms)
+            .map_err(|e| eyre!("Failed to set executable permissions on {}: {e}", path.display()))
+    }
+
+    fn shell_configs() -> Vec<(&'static str, PathBuf)> {
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => return Vec::new(),
+        };
+
+        let mut configs = Vec::new();
+
+        if which("bash").is_ok() {
+            let rc = home.join(".bashrc");
+            if rc.exists() {
+                configs.push(("bash", rc));
+            } else {
+                configs.push(("bash", home.join(".bash_profile")));
+            }
+        }
+
+        if which("zsh").is_ok() {
+            configs.push(("zsh", home.join(".zshrc")));
+        }
+
+        if which("fish").is_ok() {
+            let fish_config = dirs::config_dir()
+                .unwrap_or_else(|| home.join(".config"))
+                .join("fish/config.fish");
+            configs.push(("fish", fish_config));
+        }
+
+        configs
+    }
+
+    fn configure_shell(shell: &str, config_path: &Path, needs_path: bool) -> Result<()> {
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let contents = if config_path.exists() {
+            fs::read_to_string(config_path)
+                .map_err(|e| eyre!("Failed to read {}: {e}", config_path.display()))?
+        } else {
+            String::new()
+        };
+
+        let mut to_append = Vec::new();
+
+        if needs_path {
+            let path_line = match shell {
+                "fish" => r#"set -gx PATH "$HOME/.wakatime" $PATH"#,
+                _ => r#"export PATH="$HOME/.wakatime:$PATH""#,
+            };
+            if !contents.contains(path_line) {
+                to_append.push(path_line);
+            }
+        }
+
+        let init_line = match shell {
+            "fish" => "terminal-wakatime init fish | source",
+            _ => r#"eval "$(terminal-wakatime init)""#,
+        };
+        if !contents.contains(init_line) {
+            to_append.push(init_line);
+        }
+
+        if to_append.is_empty() {
+            return Ok(());
+        }
+
+        let mut new_contents = contents;
+        if !new_contents.is_empty() && !new_contents.ends_with('\n') {
+            new_contents.push('\n');
+        }
+        new_contents.push_str("\n# terminal-wakatime setup\n");
+        new_contents.push_str(&to_append.join("\n"));
+        new_contents.push('\n');
+
+        fs::write(config_path, new_contents)
+            .map_err(|e| eyre!("Failed to write {}: {e}", config_path.display()))
     }
 }
 
@@ -76,7 +257,6 @@ impl EditorPlugin for TerminalWakaTime {
                 "terminal-wakatime setup is not currently supported on Windows (requires bash, zsh, or fish)"
             ));
         }
-        }
 
         #[cfg(not(target_os = "windows"))]
         {
@@ -84,32 +264,26 @@ impl EditorPlugin for TerminalWakaTime {
                 return Err(eyre!("No supported shell found (bash, zsh, fish)"));
             }
 
-            if !Self::has_bash() {
-                return Err(eyre!(
-                    "bash is required to run the terminal-wakatime installer"
-                ));
+            let binary_path = if let Some(path) = Self::existing_binary_path() {
+                path
+            } else {
+                let client = reqwest::blocking::Client::new();
+                let tag = Self::fetch_latest_tag(&client)?;
+                let bytes = Self::download_binary(&client, &tag)?;
+                Self::install_binary(&bytes)?
+            };
+
+            let needs_path = binary_path
+                .parent()
+                .and_then(|p| Self::fallback_install_dir().ok().map(|f| p == f))
+                .unwrap_or(false);
+
+            let shells = Self::shell_configs();
+            for (shell, config_path) in &shells {
+                Self::configure_shell(shell, config_path, needs_path)?;
             }
 
-            if Self::install_path().is_some_and(|p| p.exists()) {
-                return Ok(());
-            }
-
-            let mut last_error_output = String::new();
-
-            for url in Self::INSTALL_URLS {
-                let (success, output) = Self::run_installer_script(url)?;
-                if success {
-                    return Ok(());
-                }
-                last_error_output = output;
-            }
-
-            Err(eyre!(
-                "terminal-wakatime installer failed. Details: {}",
-                last_error_output.trim()
-            ))
-        }
-    }
+            Ok(())
         }
     }
 }

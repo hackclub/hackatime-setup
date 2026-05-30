@@ -144,11 +144,11 @@ exclude_unknown_project = true
     }
 
     if ($CodeCli) {
-        Write-Color "  Found VS Code, installing WakaTime extension..."
+        Write-Color "  Found VS Code, installing Hackatime extension..."
         try {
             $process = Start-Process `
                 -FilePath "cmd" `
-                -ArgumentList "/C", "`"$CodeCli`"", "--install-extension", "WakaTime.vscode-wakatime" `
+                -ArgumentList "/C", "`"$CodeCli`"", "--install-extension", "hackatime.hackatime-time-tracker" `
                 -Wait `
                 -PassThru `
                 -NoNewWindow 2>$null
@@ -156,7 +156,7 @@ exclude_unknown_project = true
             if ($process.ExitCode -eq 0) {
                 $VsCodeInstalled = $true
                 Write-Color "  OK " -Color Green -NoNewline
-                Write-Color "WakaTime extension installed."
+                Write-Color "Hackatime extension installed."
             } else {
                 Write-Color "  Note " -Color Yellow -NoNewline
                 Write-Color "Extension install exited with code $($process.ExitCode)."
@@ -167,7 +167,7 @@ exclude_unknown_project = true
         }
     } else {
         Write-Color "  Note " -Color Yellow -NoNewline
-        Write-Color "VS Code not found. Install the WakaTime extension manually from the marketplace."
+        Write-Color "VS Code not found. Install the 'Hackatime Time Tracker' extension manually from the marketplace."
     }
 
     Write-Color ""
@@ -183,10 +183,10 @@ exclude_unknown_project = true
 
     if ($VsCodeInstalled) {
         Write-Color "  VS Code: " -NoNewline
-        Write-Color "WakaTime extension installed" -Color Green
+        Write-Color "Hackatime extension installed" -Color Green
     } else {
         Write-Color "  VS Code: " -NoNewline
-        Write-Color "Install WakaTime extension manually" -Color Yellow
+        Write-Color "Install the 'Hackatime Time Tracker' extension manually" -Color Yellow
     }
 
     Write-Color ""

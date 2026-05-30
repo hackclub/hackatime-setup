@@ -6,6 +6,8 @@ use which::which;
 
 use super::EditorPlugin;
 
+const EXTENSION_ID: &str = "hackatime.hackatime-time-tracker";
+
 pub struct VsCodeFamily {
     pub name: &'static str,
     pub config_subdir: &'static str,
@@ -139,7 +141,7 @@ impl EditorPlugin for VsCodeFamily {
         }
 
         let status = cmd
-            .args(["--install-extension", "WakaTime.vscode-wakatime"])
+            .args(["--install-extension", EXTENSION_ID])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -149,7 +151,7 @@ impl EditorPlugin for VsCodeFamily {
             Ok(None)
         } else {
             Err(eyre!(
-                "Failed to install WakaTime extension for {}. Exit code: {:?}",
+                "Failed to install Hackatime extension for {}. Exit code: {:?}",
                 self.name,
                 status.code()
             ))

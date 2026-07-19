@@ -55,6 +55,85 @@ function Write-Banner {
     Write-Color ""
 }
 
+function Get-WakaTimeHome {
+    if ($env:WAKATIME_HOME) {
+        return $env:WAKATIME_HOME
+    }
+
+    return $env:USERPROFILE
+}
+
+function Get-WakaTimeInternalConfigPath {
+    if ($env:WAKATIME_HOME) {
+        return Join-Path $env:WAKATIME_HOME "wakatime-internal.cfg"
+    }
+
+    return Join-Path (Join-Path $env:USERPROFILE ".wakatime") "wakatime-internal.cfg"
+}
+
+function Set-InternalConfigValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    $lines = @()
+    if (Test-Path $Path) {
+        $lines = @(Get-Content -Path $Path -ErrorAction Stop)
+    }
+
+    $updated = New-Object System.Collections.Generic.List[string]
+    $inInternal = $false
+    $sawInternal = $false
+    $wroteKey = $false
+
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[(.+)\]\s*$') {
+            if ($inInternal -and -not $wroteKey) {
+                $updated.Add("ai_logs_last_parsed_at = $Value")
+                $wroteKey = $true
+            }
+
+            $section = $Matches[1].Trim()
+            $inInternal = $section -ieq "internal"
+            if ($inInternal) {
+                $sawInternal = $true
+            }
+
+            $updated.Add($line)
+            continue
+        }
+
+        if ($inInternal -and $line -match '^\s*ai_logs_last_parsed_at\s*=') {
+            if (-not $wroteKey) {
+                $updated.Add("ai_logs_last_parsed_at = $Value")
+                $wroteKey = $true
+            }
+            continue
+        }
+
+        $updated.Add($line)
+    }
+
+    if ($inInternal -and -not $wroteKey) {
+        $updated.Add("ai_logs_last_parsed_at = $Value")
+        $wroteKey = $true
+    }
+
+    if (-not $sawInternal) {
+        if ($updated.Count -gt 0 -and $updated[$updated.Count - 1] -ne "") {
+            $updated.Add("")
+        }
+        $updated.Add("[internal]")
+        $updated.Add("ai_logs_last_parsed_at = $Value")
+    }
+
+    Set-Content -Path $Path -Value $updated -Encoding UTF8 -ErrorAction Stop
+}
+
 # --- Simplified setup ---
 
 function Install-Simplified {
@@ -67,7 +146,8 @@ function Install-Simplified {
     Write-Color "  Setting up Hackatime on this system." -Color White
     Write-Color "  This will:" -Color White
     Write-Color "    1. Write your ~/.wakatime.cfg config file" -Color Gray
-    Write-Color "    2. Try to install the VS Code extension" -Color Gray
+    Write-Color "    2. Mark existing AI activity as already checked" -Color Gray
+    Write-Color "    3. Try to install the VS Code extension" -Color Gray
     Write-Color ""
     Write-Color "  For other editors, you'll need to install the" -Color White
     Write-Color "  WakaTime plugin manually. Need help? Ask here:" -Color White
@@ -78,7 +158,7 @@ function Install-Simplified {
 
     # --- Step 1: Write .wakatime.cfg ---
 
-    $ConfigPath = Join-Path $env:USERPROFILE ".wakatime.cfg"
+    $ConfigPath = Join-Path (Get-WakaTimeHome) ".wakatime.cfg"
 
     $ConfigContent = @"
 [settings]
@@ -90,7 +170,7 @@ exclude_unknown_project = true
 # help with config: https://github.com/wakatime/wakatime-cli/blob/develop/USAGE.md#ini-config-file
 "@
 
-    Write-Color "[1/2] " -Color Green -NoNewline
+    Write-Color "[1/3] " -Color Green -NoNewline
     Write-Color "Writing config to " -NoNewline
     Write-Color $ConfigPath -Color Green
 
@@ -106,9 +186,31 @@ exclude_unknown_project = true
 
     Write-Color ""
 
-    # --- Step 2: Try to install VS Code extension ---
+    # --- Step 2: Write wakatime-internal.cfg ---
 
-    Write-Color "[2/2] " -Color Green -NoNewline
+    $InternalConfigPath = Get-WakaTimeInternalConfigPath
+    $InternalConfigDir = Split-Path -Parent $InternalConfigPath
+    $AiLogsLastParsedAt = [System.DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+
+    Write-Color "[2/3] " -Color Green -NoNewline
+    Write-Color "Writing WakaTime internal config to " -NoNewline
+    Write-Color $InternalConfigPath -Color Green
+
+    try {
+        New-Item -ItemType Directory -Path $InternalConfigDir -Force | Out-Null
+        Set-InternalConfigValue -Path $InternalConfigPath -Value $AiLogsLastParsedAt
+        Write-Color "  OK " -Color Green -NoNewline
+        Write-Color "Initial AI activity backfill will be skipped."
+    } catch {
+        Write-Color "  WARN " -Color Yellow -NoNewline
+        Write-Color "Could not write internal config to skip initial AI activity backfill: $_"
+    }
+
+    Write-Color ""
+
+    # --- Step 3: Try to install VS Code extension ---
+
+    Write-Color "[3/3] " -Color Green -NoNewline
     Write-Color "Checking for VS Code..."
 
     $VsCodeInstalled = $false
@@ -180,6 +282,8 @@ exclude_unknown_project = true
     Write-Color ""
     Write-Color "  Config: " -NoNewline
     Write-Color $ConfigPath -Color Green
+    Write-Color "  Internal config: " -NoNewline
+    Write-Color $InternalConfigPath -Color Green
 
     if ($VsCodeInstalled) {
         Write-Color "  VS Code: " -NoNewline

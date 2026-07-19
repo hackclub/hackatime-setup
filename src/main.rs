@@ -1,10 +1,11 @@
 use std::{
-    fs,
+    env, fs,
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use clap::Parser;
-use color_eyre::{Result, eyre::ContextCompat};
+use color_eyre::{Result, eyre::ContextCompat, eyre::WrapErr};
 use colored::Colorize;
 use indicatif::ProgressBar;
 use ini::{Ini, WriteOption};
@@ -135,11 +136,85 @@ fn validate_api_key(key: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn remove_internal_config() {
-    if let Some(home_dir) = dirs::home_dir() {
-        let internal_config_path = home_dir.join(".wakatime-internal.cfg");
-        let _ = fs::remove_file(internal_config_path);
+fn current_utc_rfc3339() -> String {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let days = timestamp.div_euclid(86_400);
+    let seconds_of_day = timestamp.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
+    let z = days_since_unix_epoch + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    let year = year + if month <= 2 { 1 } else { 0 };
+
+    (year, month, day)
+}
+
+fn wakatime_home() -> Result<Option<PathBuf>> {
+    if let Some(path) = env::var_os("WAKATIME_HOME") {
+        if !path.is_empty() {
+            return Ok(Some(PathBuf::from(path)));
+        }
     }
+
+    Ok(dirs::home_dir())
+}
+
+fn wakatime_internal_config_path() -> Result<PathBuf> {
+    if let Some(path) = env::var_os("WAKATIME_HOME") {
+        if !path.is_empty() {
+            return Ok(PathBuf::from(path).join("wakatime-internal.cfg"));
+        }
+    }
+
+    Ok(wakatime_home()?
+        .wrap_err("Could not find home directory")?
+        .join(".wakatime")
+        .join("wakatime-internal.cfg"))
+}
+
+fn seed_ai_logs_last_parsed_at() -> Result<()> {
+    let internal_config_path = wakatime_internal_config_path()?;
+
+    if let Some(parent) = internal_config_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut conf = if internal_config_path.exists() {
+        Ini::load_from_file(&internal_config_path)
+            .wrap_err("Could not parse existing WakaTime internal config")?
+    } else {
+        Ini::new()
+    };
+
+    let now = current_utc_rfc3339();
+    conf.with_section(Some("internal"))
+        .set("ai_logs_last_parsed_at", now);
+
+    let write_opt = WriteOption {
+        kv_separator: " = ",
+        ..Default::default()
+    };
+    conf.write_to_file_opt(&internal_config_path, write_opt)?;
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -195,7 +270,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let config_path = dirs::home_dir()
+    let config_path = wakatime_home()?
         .wrap_err("Could not find home directory")?
         .join(".wakatime.cfg");
 
@@ -205,6 +280,14 @@ fn main() -> Result<()> {
         "✔".green().bold(),
         format!("Config written to {}", config_path.display()).green()
     );
+
+    if let Err(e) = seed_ai_logs_last_parsed_at() {
+        eprintln!(
+            "{} Could not update WakaTime internal config to skip initial AI activity backfill: {}",
+            "Warning:".yellow(),
+            e
+        );
+    }
 
     let all_editors = editor_plugins::all_editors();
     let installed_editors: Vec<_> = all_editors
@@ -256,8 +339,6 @@ fn main() -> Result<()> {
     if let Err(e) = send_test_heartbeat(&cli.key, &cli.api_url) {
         eprintln!("{} {}", "Warning:".yellow(), e);
     }
-
-    remove_internal_config();
 
     Ok(())
 }

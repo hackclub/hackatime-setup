@@ -67,7 +67,8 @@ function Install-Simplified {
     Write-Color "  Setting up Hackatime on this system." -Color White
     Write-Color "  This will:" -Color White
     Write-Color "    1. Write your ~/.wakatime.cfg config file" -Color Gray
-    Write-Color "    2. Try to install the VS Code extension" -Color Gray
+    Write-Color "    2. Mark existing AI activity as already checked" -Color Gray
+    Write-Color "    3. Try to install the VS Code extension" -Color Gray
     Write-Color ""
     Write-Color "  For other editors, you'll need to install the" -Color White
     Write-Color "  WakaTime plugin manually. Need help? Ask here:" -Color White
@@ -90,7 +91,7 @@ exclude_unknown_project = true
 # help with config: https://github.com/wakatime/wakatime-cli/blob/develop/USAGE.md#ini-config-file
 "@
 
-    Write-Color "[1/2] " -Color Green -NoNewline
+    Write-Color "[1/3] " -Color Green -NoNewline
     Write-Color "Writing config to " -NoNewline
     Write-Color $ConfigPath -Color Green
 
@@ -106,9 +107,35 @@ exclude_unknown_project = true
 
     Write-Color ""
 
-    # --- Step 2: Try to install VS Code extension ---
+    # --- Step 2: Write wakatime-internal.cfg ---
 
-    Write-Color "[2/2] " -Color Green -NoNewline
+    $InternalConfigDir = Join-Path $env:USERPROFILE ".wakatime"
+    $InternalConfigPath = Join-Path $InternalConfigDir "wakatime-internal.cfg"
+    $AiLogsLastParsedAt = [System.DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    $InternalConfigContent = @"
+[internal]
+ai_logs_last_parsed_at = $AiLogsLastParsedAt
+"@
+
+    Write-Color "[2/3] " -Color Green -NoNewline
+    Write-Color "Writing WakaTime internal config to " -NoNewline
+    Write-Color $InternalConfigPath -Color Green
+
+    try {
+        New-Item -ItemType Directory -Path $InternalConfigDir -Force | Out-Null
+        Set-Content -Path $InternalConfigPath -Value $InternalConfigContent -Encoding UTF8
+        Write-Color "  OK " -Color Green -NoNewline
+        Write-Color "Initial AI activity backfill will be skipped."
+    } catch {
+        Write-Color "  WARN " -Color Yellow -NoNewline
+        Write-Color "Could not write internal config to skip initial AI activity backfill: $_"
+    }
+
+    Write-Color ""
+
+    # --- Step 3: Try to install VS Code extension ---
+
+    Write-Color "[3/3] " -Color Green -NoNewline
     Write-Color "Checking for VS Code..."
 
     $VsCodeInstalled = $false
@@ -180,6 +207,8 @@ exclude_unknown_project = true
     Write-Color ""
     Write-Color "  Config: " -NoNewline
     Write-Color $ConfigPath -Color Green
+    Write-Color "  Internal config: " -NoNewline
+    Write-Color $InternalConfigPath -Color Green
 
     if ($VsCodeInstalled) {
         Write-Color "  VS Code: " -NoNewline

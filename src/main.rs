@@ -226,7 +226,10 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    println!("{}", "Welcome to Hackatime!\n".italic());
+    println!("{}", "Welcome to Hackatime!".italic());
+    if !cli.yes {
+        println!();
+    }
 
     let is_advanced = if cli.yes {
         false

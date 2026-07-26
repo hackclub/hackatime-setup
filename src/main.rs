@@ -99,8 +99,7 @@ fn build_config(api_key: &str, api_url: &str, advanced: bool) -> Result<Ini> {
     conf.with_section(Some("settings"))
         .set("api_url", api_url)
         .set("api_key", api_key)
-        .set("heartbeat_rate_limit_seconds", "30")
-        .set("exclude_unknown_project", "true");
+        .set("heartbeat_rate_limit_seconds", "30");
 
     if advanced {
         let hide_branch = Confirm::new("Hide branch names?")

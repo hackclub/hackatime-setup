@@ -165,7 +165,6 @@ function Install-Simplified {
 api_url = $ApiUrl
 api_key = $ApiKey
 heartbeat_rate_limit_seconds = 30
-exclude_unknown_project = true
 
 # help with config: https://github.com/wakatime/wakatime-cli/blob/develop/USAGE.md#ini-config-file
 "@

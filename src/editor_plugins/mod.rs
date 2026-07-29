@@ -81,7 +81,7 @@ pub fn all_editors() -> Vec<Box<dyn EditorPlugin>> {
         Box::new(Xcode),
         // Zed
         Box::new(Zed),
-        // Terminal (bash, zsh, fish)
+        // Terminal (bash, zsh, fish, nu)
         #[cfg(not(windows))]
         Box::new(TerminalWakaTime),
         // JetBrains family

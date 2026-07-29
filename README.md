@@ -7,8 +7,9 @@ A simple installer for Hackatime!
 Head to https://hackatime.hackclub.com/my/wakatime_setup to set it up!
 
 ## Supported tools
+
 - VSCode, Cursor, Trae, Windsurf, Antigravity
 - IntelliJ IDEs
 - Zed
 - Xcode
-- Terminal (bash, zsh, fish)
+- Terminal (bash, zsh, fish, nu)

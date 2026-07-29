@@ -9,6 +9,34 @@ use super::EditorPlugin;
 
 const REPO: &str = "hackclub/terminal-wakatime";
 const BINARY_NAME: &str = "terminal-wakatime";
+const NU_SETUP_MARKER: &str = "# terminal-wakatime setup (nu)";
+const NU_PATH_LINE: &str = r#"if (($env.PATH | any {|p| $p == ($env.HOME | path join ".wakatime")}) == false) { $env.PATH = ($env.PATH | prepend ($env.HOME | path join ".wakatime")) }"#;
+const NU_HOOKS_BLOCK: &str = r#"$env.config = ($env.config
+| upsert hooks.pre_execution (
+    (($env.config | get -o hooks.pre_execution) | default [])
+    | append {||
+        $env.__TERMINAL_WAKATIME_COMMAND = (commandline)
+        $env.__TERMINAL_WAKATIME_PWD = $env.PWD
+    }
+)
+| upsert hooks.pre_prompt (
+    (($env.config | get -o hooks.pre_prompt) | default [])
+    | append {||
+        if ('__TERMINAL_WAKATIME_COMMAND' in $env) and ('__TERMINAL_WAKATIME_PWD' in $env) {
+            let command = $env.__TERMINAL_WAKATIME_COMMAND
+            let pwd = $env.__TERMINAL_WAKATIME_PWD
+            hide-env __TERMINAL_WAKATIME_COMMAND
+            hide-env __TERMINAL_WAKATIME_PWD
+
+            let duration_ms = (($env | get -o CMD_DURATION_MS) | default 0)
+            let duration = (($duration_ms | into int) / 1000)
+
+            if $duration >= 1 {
+                ^terminal-wakatime track --command $command --duration $duration --pwd $pwd out+err> /dev/null
+            }
+        }
+    }
+))"#;
 
 #[derive(serde::Deserialize)]
 struct GitHubRelease {
@@ -56,17 +84,17 @@ impl TerminalWakaTime {
             return Some(preferred);
         }
 
-        if let Ok(fallback) = Self::fallback_install_path() {
-            if fallback.exists() {
-                return Some(fallback);
-            }
+        if let Ok(fallback) = Self::fallback_install_path()
+            && fallback.exists()
+        {
+            return Some(fallback);
         }
 
         which(BINARY_NAME).ok()
     }
 
     fn has_supported_shell() -> bool {
-        ["bash", "zsh", "fish"]
+        ["bash", "zsh", "fish", "nu"]
             .iter()
             .any(|shell| which(shell).is_ok())
     }
@@ -192,6 +220,13 @@ impl TerminalWakaTime {
             configs.push(("fish", fish_config));
         }
 
+        if which("nu").is_ok() {
+            let nu_config = dirs::config_dir()
+                .unwrap_or_else(|| home.join(".config"))
+                .join("nushell/config.nu");
+            configs.push(("nu", nu_config));
+        }
+
         configs
     }
 
@@ -206,6 +241,10 @@ impl TerminalWakaTime {
         } else {
             String::new()
         };
+
+        if shell == "nu" {
+            return Self::configure_nushell(config_path, contents, needs_path);
+        }
 
         let mut to_append = Vec::new();
 
@@ -242,11 +281,74 @@ impl TerminalWakaTime {
         fs::write(config_path, new_contents)
             .map_err(|e| eyre!("Failed to write {}: {e}", config_path.display()))
     }
+
+    fn configure_nushell(config_path: &Path, contents: String, needs_path: bool) -> Result<()> {
+        let Some(new_contents) = Self::build_nushell_config(&contents, needs_path) else {
+            return Ok(());
+        };
+
+        fs::write(config_path, new_contents)
+            .map_err(|e| eyre!("Failed to write {}: {e}", config_path.display()))
+    }
+
+    fn build_nushell_config(contents: &str, needs_path: bool) -> Option<String> {
+        if contents.contains(NU_SETUP_MARKER) {
+            return None;
+        }
+
+        let mut new_contents = contents.to_string();
+        if !new_contents.is_empty() && !new_contents.ends_with('\n') {
+            new_contents.push('\n');
+        }
+        new_contents.push('\n');
+        new_contents.push_str(NU_SETUP_MARKER);
+        new_contents.push('\n');
+
+        if needs_path {
+            new_contents.push_str(NU_PATH_LINE);
+            new_contents.push('\n');
+            new_contents.push('\n');
+        }
+
+        new_contents.push_str(NU_HOOKS_BLOCK);
+        new_contents.push('\n');
+
+        Some(new_contents)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NU_HOOKS_BLOCK, NU_PATH_LINE, NU_SETUP_MARKER, TerminalWakaTime};
+
+    #[test]
+    fn build_nushell_config_is_idempotent_when_marker_exists() {
+        let existing = format!("before\n{NU_SETUP_MARKER}\nafter\n");
+        assert!(TerminalWakaTime::build_nushell_config(&existing, true).is_none());
+    }
+
+    #[test]
+    fn build_nushell_config_includes_path_and_blank_line_when_needed() {
+        let generated = TerminalWakaTime::build_nushell_config("", true)
+            .expect("config should be generated when marker is absent");
+
+        let expected_gap = format!("{NU_PATH_LINE}\n\n{NU_HOOKS_BLOCK}");
+        assert!(generated.contains(&expected_gap));
+    }
+
+    #[test]
+    fn build_nushell_config_omits_path_when_not_needed() {
+        let generated = TerminalWakaTime::build_nushell_config("", false)
+            .expect("config should be generated when marker is absent");
+
+        assert!(!generated.contains(NU_PATH_LINE));
+        assert!(generated.contains(NU_HOOKS_BLOCK));
+    }
 }
 
 impl EditorPlugin for TerminalWakaTime {
     fn name(&self) -> String {
-        "Terminal (bash/zsh/fish)".to_string()
+        "Terminal (bash/zsh/fish/nu)".to_string()
     }
 
     fn is_installed(&self) -> bool {
@@ -265,14 +367,14 @@ impl EditorPlugin for TerminalWakaTime {
         #[cfg(target_os = "windows")]
         {
             return Err(eyre!(
-                "terminal-wakatime setup is not currently supported on Windows (requires bash, zsh, or fish)"
+                "terminal-wakatime setup is not currently supported on Windows (requires bash, zsh, fish, or nu)"
             ));
         }
 
         #[cfg(not(target_os = "windows"))]
         {
             if !Self::has_supported_shell() {
-                return Err(eyre!("No supported shell found (bash, zsh, fish)"));
+                return Err(eyre!("No supported shell found (bash, zsh, fish, nu)"));
             }
 
             let binary_path = if let Some(path) = Self::existing_binary_path() {

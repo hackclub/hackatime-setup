@@ -5,11 +5,11 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
-
 jobs:
   build:
+    permissions:
+      contents: read
+
     strategy:
       matrix:
         include:
@@ -19,9 +19,6 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             name: linux-aarch64
-          - target: x86_64-pc-windows-msvc
-            os: blacksmith-4vcpu-windows-2025
-            name: windows-x86_64
           - target: x86_64-apple-darwin
             os: macos-latest
             name: macos-x86_64
@@ -72,19 +69,10 @@ jobs:
           CC_aarch64_unknown_linux_musl: aarch64-linux-musl-gcc
           AR_aarch64_unknown_linux_musl: aarch64-linux-musl-ar
 
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
+      - name: Package
         run: |
           cd target/${{ matrix.target }}/release
           tar -czvf ../../../hackatime_setup-${{ matrix.name }}.tar.gz hackatime_setup
-          cd ../../..
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cd target/${{ matrix.target }}/release
-          Move-Item -Force hackatime_setup.exe hackatime_cli.exe
-          7z a ../../../hackatime_setup-${{ matrix.name }}.zip hackatime_cli.exe
           cd ../../..
 
       - name: Upload artifact
@@ -93,9 +81,89 @@ jobs:
           name: hackatime_setup-${{ matrix.name }}
           path: hackatime_setup-${{ matrix.name }}.*
 
+  build-windows:
+    runs-on: windows-2025
+    environment: release-signing
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-x86_64-pc-windows-msvc-cargo
+
+      - name: Build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Log in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows executable
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: https://eus.codesigning.azure.net/
+          signing-account-name: hackclub
+          certificate-profile-name: hackatime-desktop
+          files: ${{ github.workspace }}\target\x86_64-pc-windows-msvc\release\hackatime_setup.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Verify Windows signature
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature "target/x86_64-pc-windows-msvc/release/hackatime_setup.exe"
+          if ($signature.Status -ne 'Valid') {
+            throw "Authenticode signature is $($signature.Status): $($signature.StatusMessage)"
+          }
+          Write-Host "Valid signature from $($signature.SignerCertificate.Subject)"
+
+      - name: Package
+        run: |
+          cd target/x86_64-pc-windows-msvc/release
+          Move-Item -Force hackatime_setup.exe hackatime_cli.exe
+          7z a ../../../hackatime_setup-windows-x86_64.zip hackatime_cli.exe
+          cd ../../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hackatime_setup-windows-x86_64
+          path: hackatime_setup-windows-x86_64.zip
+
   release:
-    needs: build
+    needs: [build, build-windows]
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: write
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4

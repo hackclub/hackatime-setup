@@ -36,10 +36,20 @@ They should identify a Microsoft Entra application configured with:
 The workflow authenticates using GitHub OIDC, so it does not require a client
 secret or a checked-in certificate.
 
-If the service principal does not (yet) hold the signer role, the release still
-ships with an unsigned `hackatime_cli.exe` and the workflow prints a warning.
-Anyone whose own Azure account has the signer role can then sign and replace
-the asset from a Mac or Linux machine:
+If the service principal does not (yet) hold the signer role, the workflow
+falls back to a stored Azure CLI session from the `AZURE_CLI_SESSION` secret in
+the `release-signing` environment. Anyone whose own Azure account has the signer
+role can create or rotate that secret (it expires after roughly 90 days of
+inactivity or on credential changes):
+
+```sh
+brew install azure-cli
+scripts/update-ci-azure-session.sh
+```
+
+If both fail, the release still ships with an unsigned `hackatime_cli.exe` and
+the workflow prints a warning. The asset can then be signed and replaced from a
+Mac or Linux machine:
 
 ```sh
 brew install azure-cli jsign osslsigncode

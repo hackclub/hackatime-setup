@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+  # Manual runs build and sign everything but do not publish a release.
+  workflow_dispatch:
 
 jobs:
   build:
@@ -108,10 +110,9 @@ jobs:
       - name: Build
         run: cargo build --release --target x86_64-pc-windows-msvc
 
-      # Signing needs the hackatime-setup-github service principal to hold the
-      # "Artifact Signing Certificate Profile Signer" role. Until an Azure admin
-      # grants it, these steps fail; the release still ships and the exe can be
-      # signed afterwards with scripts/sign-windows-release.sh.
+      # Preferred: OIDC login as the hackatime-setup-github service principal.
+      # This only works once an Azure admin grants it the
+      # "Artifact Signing Certificate Profile Signer" role.
       - name: Log in to Azure
         id: azure-login
         uses: azure/login@v3
@@ -122,9 +123,36 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           allow-no-subscriptions: true
 
+      # Fallback: a stored Azure CLI session of a user who holds the signer role.
+      # Created with scripts/update-ci-azure-session.sh.
+      - name: Restore stored Azure CLI session
+        id: azure-session
+        if: steps.azure-login.outcome != 'success'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          AZURE_CLI_SESSION: ${{ secrets.AZURE_CLI_SESSION }}
+        run: |
+          if (-not $env:AZURE_CLI_SESSION) {
+            throw "AZURE_CLI_SESSION secret is not set; run scripts/update-ci-azure-session.sh"
+          }
+          $dir = Join-Path $env:RUNNER_TEMP "azure-cli-session"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $tgz = Join-Path $env:RUNNER_TEMP "azure-cli-session.tgz"
+          [IO.File]::WriteAllBytes($tgz, [Convert]::FromBase64String($env:AZURE_CLI_SESSION))
+          tar -xzf $tgz -C $dir
+          Remove-Item $tgz
+          "AZURE_CONFIG_DIR=$dir" >> $env:GITHUB_ENV
+          $env:AZURE_CONFIG_DIR = $dir
+          $user = az account show --query user.name -o tsv
+          if ($LASTEXITCODE -ne 0) { throw "stored session is not usable" }
+          az account get-access-token --resource https://codesigning.azure.net --query expiresOn -o tsv | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "stored session cannot get an Artifact Signing token; re-run scripts/update-ci-azure-session.sh" }
+          Write-Host "Signing as $user via stored Azure CLI session"
+
       - name: Sign Windows executable
         id: sign
-        if: steps.azure-login.outcome == 'success'
+        if: steps.azure-login.outcome == 'success' || steps.azure-session.outcome == 'success'
         uses: azure/artifact-signing-action@v2
         continue-on-error: true
         with:
@@ -158,7 +186,7 @@ jobs:
 
       - name: Warn that the executable is unsigned
         if: steps.sign.outcome != 'success'
-        run: Write-Host "::warning::hackatime_cli.exe was NOT signed (Azure login or signing failed). Run scripts/sign-windows-release.sh after the release is published."
+        run: Write-Host "::warning::hackatime_cli.exe was NOT signed. Neither OIDC login nor the stored Azure CLI session worked; re-run scripts/update-ci-azure-session.sh, or sign afterwards with scripts/sign-windows-release.sh."
 
       - name: Package
         run: |
@@ -175,6 +203,7 @@ jobs:
 
   release:
     needs: [build, build-windows]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write

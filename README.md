@@ -34,5 +34,20 @@ They should identify a Microsoft Entra application configured with:
    account.
 
 The workflow authenticates using GitHub OIDC, so it does not require a client
-secret or a checked-in certificate. An interactive `az login` is only needed
-when signing manually from a developer machine.
+secret or a checked-in certificate.
+
+If the service principal does not (yet) hold the signer role, the release still
+ships with an unsigned `hackatime_cli.exe` and the workflow prints a warning.
+Anyone whose own Azure account has the signer role can then sign and replace
+the asset from a Mac or Linux machine:
+
+```sh
+brew install azure-cli jsign osslsigncode
+az login
+scripts/sign-windows-release.sh            # latest release
+scripts/sign-windows-release.sh v1.5.24    # a specific tag
+```
+
+The script downloads the Windows zip, signs the exe with Azure Artifact Signing
+via [jsign](https://ebourg.github.io/jsign/), verifies the signature against
+Microsoft's root CA, and re-uploads the zip to the release.

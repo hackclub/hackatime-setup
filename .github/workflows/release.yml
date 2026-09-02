@@ -108,8 +108,14 @@ jobs:
       - name: Build
         run: cargo build --release --target x86_64-pc-windows-msvc
 
+      # Signing needs the hackatime-setup-github service principal to hold the
+      # "Artifact Signing Certificate Profile Signer" role. Until an Azure admin
+      # grants it, these steps fail; the release still ships and the exe can be
+      # signed afterwards with scripts/sign-windows-release.sh.
       - name: Log in to Azure
+        id: azure-login
         uses: azure/login@v3
+        continue-on-error: true
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -117,7 +123,10 @@ jobs:
           allow-no-subscriptions: true
 
       - name: Sign Windows executable
+        id: sign
+        if: steps.azure-login.outcome == 'success'
         uses: azure/artifact-signing-action@v2
+        continue-on-error: true
         with:
           endpoint: https://eus.codesigning.azure.net/
           signing-account-name: hackclub
@@ -138,6 +147,7 @@ jobs:
           exclude-interactive-browser-credential: true
 
       - name: Verify Windows signature
+        if: steps.sign.outcome == 'success'
         shell: pwsh
         run: |
           $signature = Get-AuthenticodeSignature "target/x86_64-pc-windows-msvc/release/hackatime_setup.exe"
@@ -145,6 +155,10 @@ jobs:
             throw "Authenticode signature is $($signature.Status): $($signature.StatusMessage)"
           }
           Write-Host "Valid signature from $($signature.SignerCertificate.Subject)"
+
+      - name: Warn that the executable is unsigned
+        if: steps.sign.outcome != 'success'
+        run: Write-Host "::warning::hackatime_cli.exe was NOT signed (Azure login or signing failed). Run scripts/sign-windows-release.sh after the release is published."
 
       - name: Package
         run: |

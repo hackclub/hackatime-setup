@@ -380,7 +380,6 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"new");
         let mode = fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o755);
-        // No temporary files are left behind
         assert_eq!(dir_entries(dir.path()), vec![BINARY_NAME]);
     }
 
@@ -401,6 +400,21 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(fs::read(&path).unwrap(), b"old");
+        assert_eq!(dir_entries(dir.path()), vec![BINARY_NAME]);
+    }
+
+    #[test]
+    fn write_binary_failed_rename_removes_temporary_file() {
+        // A directory can't be replaced by a file, so this fails at the
+        // rename, after the temporary file has been written
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(BINARY_NAME);
+        fs::create_dir(&path).unwrap();
+
+        let result = TerminalWakaTime::try_write_binary(&path, b"new");
+
+        assert!(result.is_err());
+        assert!(path.is_dir());
         assert_eq!(dir_entries(dir.path()), vec![BINARY_NAME]);
     }
 }

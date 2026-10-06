@@ -1,5 +1,6 @@
 use std::env::consts::{ARCH, OS};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use color_eyre::{Result, eyre::eyre};
@@ -65,11 +66,13 @@ impl TerminalWakaTime {
         which(BINARY_NAME).ok()
     }
 
-    /// Whether setup installed the binary at `path`. A copy anywhere else was
-    /// installed by something like Nix or Homebrew, which handles its updates.
+    /// Whether setup installed the binary at `path`. A copy anywhere else, or
+    /// a symlink (setup only writes regular files), was installed by something
+    /// like Nix or Homebrew, which handles its updates.
     fn is_setup_install_path(path: &Path) -> bool {
-        path == Self::preferred_install_path()
-            || Self::fallback_install_path().is_ok_and(|fallback| path == fallback)
+        let setup_path = path == Self::preferred_install_path()
+            || Self::fallback_install_path().is_ok_and(|fallback| path == fallback);
+        setup_path && !path.is_symlink()
     }
 
     fn installed_version(path: &Path) -> Option<String> {
@@ -82,25 +85,25 @@ impl TerminalWakaTime {
         stdout.split_whitespace().last().map(str::to_string)
     }
 
-    /// Downloads the latest release unless `existing` already has it. An
-    /// existing copy is replaced in place so it stays first on PATH.
-    fn install_latest(existing: Option<&Path>) -> Result<PathBuf> {
+    fn install_latest() -> Result<PathBuf> {
         let client = reqwest::blocking::Client::new();
         let tag = Self::fetch_latest_tag(&client)?;
+        let bytes = Self::download_binary(&client, &tag)?;
+        Self::install_binary(&bytes)
+    }
 
-        if let Some(path) = existing
-            && Self::installed_version(path).as_deref() == Some(tag.as_str())
-        {
-            return Ok(path.to_path_buf());
+    /// Replaces `path` with the latest release if it is older. The binary is
+    /// only ever replaced in place: a second copy elsewhere could end up behind
+    /// the old one on PATH, so shells would keep running the old version.
+    fn update_in_place(path: &Path) -> Result<()> {
+        let client = reqwest::blocking::Client::new();
+        let tag = Self::fetch_latest_tag(&client)?;
+        if Self::installed_version(path).as_deref() == Some(tag.as_str()) {
+            return Ok(());
         }
 
         let bytes = Self::download_binary(&client, &tag)?;
-        if let Some(path) = existing
-            && Self::try_write_binary(path, &bytes).is_ok()
-        {
-            return Ok(path.to_path_buf());
-        }
-        Self::install_binary(&bytes)
+        Self::try_write_binary(path, &bytes)
     }
 
     fn has_supported_shell() -> bool {
@@ -181,19 +184,17 @@ impl TerminalWakaTime {
                 .map_err(|e| eyre!("Failed to create {}: {e}", parent.display()))?;
         }
 
-        // Write beside the target and rename it into place, so replacing a
-        // binary that is currently running doesn't fail with "text file busy"
-        let tmp = path.with_extension("setup-tmp");
-        let result = fs::write(&tmp, bytes)
-            .map_err(|e| eyre!("Failed to write {}: {e}", tmp.display()))
-            .and_then(|()| Self::make_executable(&tmp))
-            .and_then(|()| {
-                fs::rename(&tmp, path).map_err(|e| eyre!("Failed to write {}: {e}", path.display()))
-            });
-        if result.is_err() {
-            let _ = fs::remove_file(&tmp);
-        }
-        result
+        // Write a uniquely named file beside the target and rename it into
+        // place, so replacing a binary that is currently running doesn't fail
+        // with "text file busy" and overlapping runs can't clash. The
+        // temporary file is deleted if anything fails.
+        let dir = path.parent().unwrap_or(Path::new("."));
+        let write_err = |e: std::io::Error| eyre!("Failed to write {}: {e}", path.display());
+        let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(write_err)?;
+        tmp.write_all(bytes).map_err(write_err)?;
+        Self::make_executable(tmp.path())?;
+        tmp.persist(path).map_err(|e| write_err(e.error))?;
+        Ok(())
     }
 
     #[cfg(unix)]
@@ -325,11 +326,18 @@ impl EditorPlugin for TerminalWakaTime {
                 return Err(eyre!("No supported shell found (bash, zsh, fish)"));
             }
 
+            let mut warning = None;
             let binary_path = match Self::existing_binary_path() {
                 Some(path) if !Self::is_setup_install_path(&path) => path,
-                // Keep a working install if the update fails, for example when offline
-                Some(path) => Self::install_latest(Some(&path)).unwrap_or(path),
-                None => Self::install_latest(None)?,
+                Some(path) => {
+                    // Keep the working install if the update fails, for
+                    // example when offline or when it isn't writable
+                    if let Err(e) = Self::update_in_place(&path) {
+                        warning = Some(format!("terminal-wakatime wasn't updated: {e}"));
+                    }
+                    path
+                }
+                None => Self::install_latest()?,
             };
 
             let needs_path = binary_path
@@ -342,7 +350,71 @@ impl EditorPlugin for TerminalWakaTime {
                 Self::configure_shell(shell, config_path, needs_path)?;
             }
 
-            Ok(None)
+            Ok(warning)
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn dir_entries(dir: &Path) -> Vec<String> {
+        let mut names: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn write_binary_replaces_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(BINARY_NAME);
+        fs::write(&path, b"old").unwrap();
+
+        TerminalWakaTime::try_write_binary(&path, b"new").unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        let mode = fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o755);
+        assert_eq!(dir_entries(dir.path()), vec![BINARY_NAME]);
+    }
+
+    #[test]
+    fn write_binary_failure_keeps_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(BINARY_NAME);
+        fs::write(&path, b"old").unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Root can write to read-only directories, so this can't fail there
+        let is_root = fs::write(dir.path().join("probe"), b"").is_ok();
+        let result = TerminalWakaTime::try_write_binary(&path, b"new");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        if is_root {
+            return;
+        }
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"old");
+        assert_eq!(dir_entries(dir.path()), vec![BINARY_NAME]);
+    }
+
+    #[test]
+    fn write_binary_failed_rename_removes_temporary_file() {
+        // A directory can't be replaced by a file, so this fails at the
+        // rename, after the temporary file has been written
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(BINARY_NAME);
+        fs::create_dir(&path).unwrap();
+
+        let result = TerminalWakaTime::try_write_binary(&path, b"new");
+
+        assert!(result.is_err());
+        assert!(path.is_dir());
+        assert_eq!(dir_entries(dir.path()), vec![BINARY_NAME]);
     }
 }

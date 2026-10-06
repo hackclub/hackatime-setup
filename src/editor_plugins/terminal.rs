@@ -65,6 +65,44 @@ impl TerminalWakaTime {
         which(BINARY_NAME).ok()
     }
 
+    /// Whether setup installed the binary at `path`. A copy anywhere else was
+    /// installed by something like Nix or Homebrew, which handles its updates.
+    fn is_setup_install_path(path: &Path) -> bool {
+        path == Self::preferred_install_path()
+            || Self::fallback_install_path().is_ok_and(|fallback| path == fallback)
+    }
+
+    fn installed_version(path: &Path) -> Option<String> {
+        // Prints "terminal-wakatime version v1.1.7"
+        let output = std::process::Command::new(path)
+            .arg("version")
+            .output()
+            .ok()?;
+        let stdout = String::from_utf8(output.stdout).ok()?;
+        stdout.split_whitespace().last().map(str::to_string)
+    }
+
+    /// Downloads the latest release unless `existing` already has it. An
+    /// existing copy is replaced in place so it stays first on PATH.
+    fn install_latest(existing: Option<&Path>) -> Result<PathBuf> {
+        let client = reqwest::blocking::Client::new();
+        let tag = Self::fetch_latest_tag(&client)?;
+
+        if let Some(path) = existing
+            && Self::installed_version(path).as_deref() == Some(tag.as_str())
+        {
+            return Ok(path.to_path_buf());
+        }
+
+        let bytes = Self::download_binary(&client, &tag)?;
+        if let Some(path) = existing
+            && Self::try_write_binary(path, &bytes).is_ok()
+        {
+            return Ok(path.to_path_buf());
+        }
+        Self::install_binary(&bytes)
+    }
+
     fn has_supported_shell() -> bool {
         ["bash", "zsh", "fish"]
             .iter()
@@ -134,7 +172,6 @@ impl TerminalWakaTime {
             fallback
         };
 
-        Self::make_executable(&dest)?;
         Ok(dest)
     }
 
@@ -143,7 +180,20 @@ impl TerminalWakaTime {
             fs::create_dir_all(parent)
                 .map_err(|e| eyre!("Failed to create {}: {e}", parent.display()))?;
         }
-        fs::write(path, bytes).map_err(|e| eyre!("Failed to write {}: {e}", path.display()))
+
+        // Write beside the target and rename it into place, so replacing a
+        // binary that is currently running doesn't fail with "text file busy"
+        let tmp = path.with_extension("setup-tmp");
+        let result = fs::write(&tmp, bytes)
+            .map_err(|e| eyre!("Failed to write {}: {e}", tmp.display()))
+            .and_then(|()| Self::make_executable(&tmp))
+            .and_then(|()| {
+                fs::rename(&tmp, path).map_err(|e| eyre!("Failed to write {}: {e}", path.display()))
+            });
+        if result.is_err() {
+            let _ = fs::remove_file(&tmp);
+        }
+        result
     }
 
     #[cfg(unix)]
@@ -275,13 +325,11 @@ impl EditorPlugin for TerminalWakaTime {
                 return Err(eyre!("No supported shell found (bash, zsh, fish)"));
             }
 
-            let binary_path = if let Some(path) = Self::existing_binary_path() {
-                path
-            } else {
-                let client = reqwest::blocking::Client::new();
-                let tag = Self::fetch_latest_tag(&client)?;
-                let bytes = Self::download_binary(&client, &tag)?;
-                Self::install_binary(&bytes)?
+            let binary_path = match Self::existing_binary_path() {
+                Some(path) if !Self::is_setup_install_path(&path) => path,
+                // Keep a working install if the update fails, for example when offline
+                Some(path) => Self::install_latest(Some(&path)).unwrap_or(path),
+                None => Self::install_latest(None)?,
             };
 
             let needs_path = binary_path
